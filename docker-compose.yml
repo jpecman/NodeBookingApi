@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-booking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-booking}
+      POSTGRES_DB: ${POSTGRES_DB:-nodebooking}
+    ports:
+      # Host 5433 so this never collides with BookingApi's Postgres on 5432.
+      - '${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - nodebooking_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-booking} -d ${POSTGRES_DB:-nodebooking}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nodebooking_db:
+    driver: local
