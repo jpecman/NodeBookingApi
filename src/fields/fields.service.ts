@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { CreateFieldDto } from './dto/create-field.dto';
 import { UpdateFieldDto } from './dto/update-field.dto';
 import { Field } from './entities/field.entity';
+import { getCurrentTenantId } from 'src/common/tenancy/tenant-context';
 
 @Injectable() // makes class a provider, meaning it can be used by DI
 export class FieldsService {
@@ -27,5 +28,13 @@ export class FieldsService {
         this.logger.log(`Created field ${saved.id} with ${saved.pitches.length} pitch(es)`);
 
         return saved;
+    }
+
+    findAll(): Promise<Field[]> {
+        return this.fields.find({
+            where: {tenantId: getCurrentTenantId() },
+            relations: {pitches: true},
+            order: { name: 'ASC'}
+        });
     }
 }

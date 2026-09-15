@@ -24,6 +24,18 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   DATABASE_URL: string;
+
+  @IsString()
+  @IsNotEmpty()
+  AUTH_DATABASE_URL: string;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_SECRET: string;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_EXPIRES_IN: string = '8h';
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

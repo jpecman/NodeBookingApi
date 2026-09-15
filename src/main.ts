@@ -2,14 +2,18 @@ import 'reflect-metadata';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { createSwaggerDocument } from './swagger';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+
+  app.use(cookieParser());
 
   app.setGlobalPrefix('api/v1');
 
@@ -28,15 +32,7 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new AllExceptionsFilter());
 
   if (config.get<string>('nodeEnv') !== 'production') {
-    const document = SwaggerModule.createDocument(
-      app,
-      new DocumentBuilder()
-        .setTitle('NodeBookingApi')
-        .setDescription('NestJS port of the BookingApi Contact slice')
-        .setVersion('0.1.0')
-        .build(),
-    );
-    SwaggerModule.setup('api/docs', app, document);
+    SwaggerModule.setup('api/docs', app, createSwaggerDocument(app));
     logger.log('Swagger UI available at /api/docs');
   }
 

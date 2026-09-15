@@ -35,4 +35,12 @@ export class FieldsController {
     async create(@Body() dto: CreateFieldDto): Promise<FieldResponseDto> {
         return FieldResponseDto.fromEntity(await this.fieldsService.create(dto));
     }
+
+    @Get()
+    @ApiOperation({ summary: 'List all fields'})
+    @ApiOkResponse({ type: [FieldResponseDto]})
+    async findAll(): Promise<FieldResponseDto[]> {
+      const fields = await this.fieldsService.findAll();
+      return fields.map(FieldResponseDto.fromEntity);
+    }
 }

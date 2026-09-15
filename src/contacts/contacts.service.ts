@@ -2,12 +2,10 @@ import { randomUUID } from 'crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { getCurrentTenantId } from '../common/tenancy/tenant-context';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { Contact } from './entities/contact.entity';
-
-/** "FK Borovany" in the shared BookingDb — see contact.entity.ts. */
-const TENANT_ID = '2434c89e-e6ae-4815-92de-99646bd2e42c';
 
 @Injectable()
 export class ContactsService {
@@ -19,6 +17,8 @@ export class ContactsService {
   ) {}
 
   async create(dto: CreateContactDto): Promise<Contact> {
+    // tenantId is stamped by TenantSubscriber.beforeInsert() from the request's tenant
+    // context, not set here.
     const contact = this.contacts.create({
       id: randomUUID(),
       firstName: dto.firstName,
@@ -26,7 +26,6 @@ export class ContactsService {
       email: dto.email ?? '',
       phone: dto.phone ?? '',
       show: dto.show ?? false,
-      tenantId: TENANT_ID,
     });
 
     // A duplicate email raises a Postgres 23505 here; AllExceptionsFilter turns
@@ -39,13 +38,13 @@ export class ContactsService {
 
   findAll(): Promise<Contact[]> {
     return this.contacts.find({
-      where: { tenantId: TENANT_ID },
+      where: { tenantId: getCurrentTenantId() },
       order: { lastName: 'ASC', firstName: 'ASC' },
     });
   }
 
   async findOne(id: string): Promise<Contact> {
-    const contact = await this.contacts.findOneBy({ id, tenantId: TENANT_ID });
+    const contact = await this.contacts.findOneBy({ id, tenantId: getCurrentTenantId() });
 
     if (!contact) {
       this.logger.warn(`Contact ${id} not found`);
@@ -75,7 +74,7 @@ export class ContactsService {
   async remove(id: string): Promise<void> {
     // Bookings.ContactId cascades on delete in the shared BookingApi schema, so this
     // also deletes that contact's bookings.
-    const result = await this.contacts.delete({ id, tenantId: TENANT_ID });
+    const result = await this.contacts.delete({ id, tenantId: getCurrentTenantId() });
 
     if (!result.affected) {
       this.logger.warn(`Contact ${id} not found`);

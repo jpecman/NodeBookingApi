@@ -12,11 +12,11 @@ export class FieldResponseDto {
   @ApiProperty({ type: [PitchResponseDto] })
   pitches: PitchResponseDto[];
 
-  @ApiProperty()
-  createdAt: Date;
+  // @ApiProperty()
+  // createdAt: Date;
 
-  @ApiProperty()
-  updatedAt: Date;
+  // @ApiProperty()
+  // updatedAt: Date;
 
   /** Keeps the persistence shape (`version`) from leaking onto the wire. */
   static fromEntity(field: Field): FieldResponseDto {
@@ -26,8 +26,8 @@ export class FieldResponseDto {
       // TypeORM leaves `pitches` undefined unless the query asked for the relation,
       // so `?? []` is what stops a plain find() from turning this into a 500.
       pitches: (field.pitches ?? []).map(PitchResponseDto.fromEntity),
-      createdAt: field.createdAt,
-      updatedAt: field.updatedAt,
+      // createdAt: field.createdAt,
+      // updatedAt: field.updatedAt,
     };
   }
 }

@@ -1,24 +1,22 @@
 import {
   Column,
-  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
   ManyToOne,
-  PrimaryGeneratedColumn,
-  UpdateDateColumn,
+  PrimaryColumn,
 } from 'typeorm';
 import { Field } from '../../fields/entities/field.entity';
 
-@Entity('pitches')
+@Entity('Pitches')
 export class Pitch {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryColumn({ name: 'Id', type: 'uuid'})
   id: string;
 
-  @Column({ type: 'varchar', length: 100 })
+  @Column({ name: 'Name', type: 'varchar'})
   name: string;
 
-  @Column({ name: 'field_id', type: 'uuid' })
+  @Column({ name: 'FieldId', type: 'uuid' })
   @Index('ix_pitches_field_id')
   fieldId: string;
 
@@ -28,12 +26,9 @@ export class Pitch {
    * ACTION instead.
    */
   @ManyToOne(() => Field, (field) => field.pitches, { onDelete: 'CASCADE', nullable: false })
-  @JoinColumn({ name: 'field_id' })
+  @JoinColumn({ name: 'FieldId' })
   field: Field;
 
-  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt: Date;
+  @Column({ name: 'TenantId', type: 'uuid' })
+  tenantId: string;
 }

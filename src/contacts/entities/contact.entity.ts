@@ -28,8 +28,9 @@ export class Contact {
   show: boolean;
 
   /**
-   * BookingApi is multi-tenant; NodeBookingApi isn't yet, so it operates as a single
-   * fixed tenant. See ContactsService.TENANT_ID.
+   * BookingApi is multi-tenant; NodeBookingApi only ever operates against one real
+   * tenant (see common/constants/tenant.ts). Stamped on insert by TenantSubscriber and
+   * filtered on read via getCurrentTenantId(), both sourced from the request's JWT.
    */
   @Column({ name: 'TenantId', type: 'uuid' })
   tenantId: string;

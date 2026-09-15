@@ -3,15 +3,16 @@ import {
   CreateDateColumn,
   Entity,
   OneToMany,
+  PrimaryColumn,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   VersionColumn,
 } from 'typeorm';
 import { Pitch } from '../../pitches/entities/pitch.entity';
 
-@Entity('fields')
+@Entity('Fields')
 export class Field {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryColumn({name: 'Id', type: 'uuid'})
   id: string;
 
   /**
@@ -19,7 +20,7 @@ export class Field {
    * explicit lengths. 100 matches TenantDb.Name and keeps this project's habit of
    * stating a length on every varchar.
    */
-  @Column({ type: 'varchar', length: 100 })
+  @Column({ name: 'Name', type: 'varchar' })
   name: string;
 
   /**
@@ -30,13 +31,16 @@ export class Field {
   @OneToMany(() => Pitch, (pitch) => pitch.field, { cascade: ['insert'] })
   pitches: Pitch[];
 
-  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-  createdAt: Date;
+  // @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  // createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt: Date;
+  // @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  // updatedAt: Date;
 
-  /** Optimistic concurrency token — stands in for FieldDb's [Timestamp] uint. */
-  @VersionColumn()
-  version: number;
+  // /** Optimistic concurrency token — stands in for FieldDb's [Timestamp] uint. */
+  // @VersionColumn()
+  // version: number;
+
+  @Column({ name: 'TenantId', type: 'uuid' })
+  tenantId: string;
 }
