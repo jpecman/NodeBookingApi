@@ -1,0 +1,34 @@
+{
+  // Prettier owns formatting; eslint.config.mjs owns correctness. They don't overlap
+  // here (no eslint-plugin-prettier), so both can run on save without fighting.
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+
+  // Only format where a Prettier config exists, so opening an unrelated file in this
+  // window doesn't get reformatted by this project's rules.
+  "prettier.requireConfig": true,
+
+  // Apply the same --fix that `npm run lint` does.
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+
+  // Use the workspace TypeScript (pinned to 5.x) rather than the one VS Code ships,
+  // so the editor and `npm run typecheck` agree.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  "search.exclude": {
+    "**/dist": true,
+    "**/node_modules": true,
+    "**/.direnv": true
+  }
+}

@@ -37,10 +37,11 @@
   "overrides": {
     "@nestjs/swagger": {
       "js-yaml": "^5.2.3"
-    }
+    },
+    "multer": "^2.3.0"
   },
   "dependencies": {
-    "@nestjs/common": "^11.1.28",
+    "@nestjs/common": "^11.2.5",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.28",
     "@nestjs/jwt": "^11.0.2",
@@ -54,6 +55,7 @@
     "class-validator": "^0.15.1",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.4.2",
+    "luxon": "^3.7.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.22.0",
@@ -70,6 +72,7 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
+    "@types/luxon": "^3.7.5",
     "@types/node": "^26.1.2",
     "@types/passport-jwt": "^4.0.1",
     "eslint": "^10.8.0",
