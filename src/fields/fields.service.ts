@@ -1,40 +1,45 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectEntityManager, InjectRepository } from '@mikro-orm/nestjs';
+import { EntityManager, EntityRepository } from '@mikro-orm/postgresql';
+import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
 import { CreateFieldDto } from './dto/create-field.dto';
 import { UpdateFieldDto } from './dto/update-field.dto';
 import { Field } from './entities/field.entity';
-import { getCurrentTenantId } from 'src/common/tenancy/tenant-context';
 
 @Injectable() // makes class a provider, meaning it can be used by DI
 export class FieldsService {
   private readonly logger = new Logger(FieldsService.name);
 
   constructor(
-    @InjectRepository(Field)
-    private readonly fields: Repository<Field>,
+    @InjectRepository(Field, BOOKING_CONTEXT)
+    private readonly fields: EntityRepository<Field>,
+    @InjectEntityManager(BOOKING_CONTEXT)
+    private readonly em: EntityManager,
   ) {}
 
   async create(dto: CreateFieldDto): Promise<Field> {
-    // cascade: ['insert'] on Field.pitches means this one save() writes the field
-    // and its pitches together, in a single transaction.
+    // Pitches given inline become entities too, and the default persist cascade means
+    // one flush inserts the field and its pitches together, in a single transaction.
+    // Neither table has an id default — BookingApi generates ids app-side.
     const field = this.fields.create({
+      id: randomUUID(),
       name: dto.name,
-      pitches: dto.pitches.map((name) => ({ name })),
+      pitches: dto.pitches.map((name) => ({ id: randomUUID(), name })),
     });
 
-    const saved = await this.fields.save(field);
-    this.logger.log(`Created field ${saved.id} with ${saved.pitches.length} pitch(es)`);
+    await this.em.flush();
+    this.logger.log(`Created field ${field.id} with ${field.pitches.length} pitch(es)`);
 
-    return saved;
+    return field;
   }
 
+  /** Tenant scoping comes from TENANT_FILTER on Field and Pitch. */
   async findOne(id: string): Promise<Field> {
-    const field = await this.fields.findOne({
-      where: { id, tenantId: getCurrentTenantId() },
-      relations: { pitches: true },
-      order: { pitches: { name: 'ASC' } },
-    });
+    const field = await this.fields.findOne(
+      { id },
+      { populate: ['pitches'], orderBy: { pitches: { name: 'asc' } } },
+    );
 
     if (!field) {
       this.logger.warn(`Field ${id} not found`);
@@ -44,11 +49,26 @@ export class FieldsService {
     return field;
   }
 
+  async update(id: string, dto: UpdateFieldDto): Promise<Field> {
+    // Throws NotFoundException if there's no such field. Otherwise the returned field is
+    // tracked by the EntityManager (so flush() below sees the changes) and has its
+    // pitches loaded for the response.
+    const field = await this.findOne(id);
+
+    // Only assign what the caller actually sent — an absent key must not clear a column.
+    Object.assign(field, dto);
+
+    // No save(): flush() issues an UPDATE for exactly the columns that changed.
+    await this.em.flush();
+    this.logger.log(`Updated field ${id}`);
+
+    return field;
+  }
+
   findAll(): Promise<Field[]> {
-    return this.fields.find({
-      where: { tenantId: getCurrentTenantId() },
-      relations: { pitches: true },
-      order: { name: 'ASC' },
+    return this.fields.findAll({
+      populate: ['pitches'],
+      orderBy: { name: 'asc' },
     });
   }
 }

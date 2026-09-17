@@ -9,7 +9,7 @@ import { createSwaggerDocument } from './swagger';
  * Writes the OpenAPI spec to disk without starting an HTTP server. Run via
  * `npm run openapi:generate [outfile]` (defaults to ./openapi.json).
  *
- * The app is still constructed, so both TypeORM connections are opened during
+ * The app is still constructed, so both MikroORM contexts connect during
  * module init — `DATABASE_URL` and `AUTH_DATABASE_URL` have to be reachable even
  * though nothing is queried.
  */

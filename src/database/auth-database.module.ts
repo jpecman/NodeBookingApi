@@ -1,26 +1,27 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { join } from 'path';
-
-export const AUTH_CONNECTION = 'auth';
+import { MikroOrmModule } from '@mikro-orm/nestjs';
+import { PostgreSqlDriver } from '@mikro-orm/postgresql';
+import { AUTH_MIGRATIONS } from './migrations/auth';
+import { AUTH_CONTEXT, createOrmOptions } from './mikro-orm.options';
 
 @Module({
   imports: [
-    TypeOrmModule.forRootAsync({
-      name: AUTH_CONNECTION,
+    MikroOrmModule.forRootAsync({
+      contextName: AUTH_CONTEXT,
+      driver: PostgreSqlDriver,
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        type: 'postgres' as const,
-        url: config.getOrThrow<string>('authDatabase.url'),
-        // Entities are picked up from every TypeOrmModule.forFeature([...], AUTH_CONNECTION) registration.
+        ...createOrmOptions({
+          clientUrl: config.getOrThrow<string>('authDatabase.url'),
+          debug: config.get<string>('nodeEnv') === 'development',
+          migrationsDir: 'migrations/auth',
+          migrations: AUTH_MIGRATIONS,
+        }),
+        // Entities come from every MikroOrmModule.forFeature([...], AUTH_CONTEXT).
         autoLoadEntities: true,
-        migrations: [join(__dirname, 'migrations', 'auth', '*.{ts,js}')],
-        // Schema changes go through migrations only — never let TypeORM alter the DB.
-        synchronize: false,
-        migrationsRun: false,
-        logging: config.get<string>('nodeEnv') === 'development' ? ['query', 'error'] : ['error'],
+        registerRequestContext: false,
       }),
     }),
   ],

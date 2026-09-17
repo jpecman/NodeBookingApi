@@ -1,4 +1,13 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryColumn } from 'typeorm';
+import { Collection, type Opt, type Ref } from '@mikro-orm/core';
+import {
+  Entity,
+  Filter,
+  ManyToOne,
+  OneToMany,
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/decorators/legacy';
+import { currentTenantOnCreate, TENANT_FILTER } from '../../common/tenancy/tenant.filter';
 import { Contact } from '../../contacts/entities/contact.entity';
 import { Slot } from '../../slots/entities/slot.entity';
 
@@ -8,42 +17,39 @@ import { Slot } from '../../slots/entities/slot.entity';
  * casing mirror BookingDb exactly.
  *
  * BookingDb's [Timestamp] uint Version is deliberately absent: EF maps it to Postgres's
- * xmin system column, which TypeORM has no equivalent for. Concurrent updates through
- * this API can therefore overwrite each other silently.
+ * xmin system column, which isn't mapped here. Concurrent updates through this API can
+ * therefore overwrite each other silently.
  */
-@Entity('Bookings')
+@Entity({ tableName: 'Bookings' })
+@Filter(TENANT_FILTER)
 export class Booking {
   /** No DB default — BookingApi generates ids app-side, so create() must call randomUUID(). */
-  @PrimaryColumn({ name: 'Id', type: 'uuid' })
+  @PrimaryKey({ fieldName: 'Id', type: 'uuid' })
   id: string;
 
-  @Column({ name: 'Name', type: 'text' })
+  @Property({ fieldName: 'Name', type: 'text' })
   name: string;
 
-  @Column({ name: 'ContactId', type: 'uuid' })
-  contactId: string;
-
   /**
-   * ON DELETE CASCADE is inherited DB behaviour, spelled out here because TypeORM
-   * defaults to NO ACTION. No inverse property on Contact: adding one would mean editing
-   * an entity that mirrors ContactDb field for field, and nothing needs it yet.
+   * ON DELETE CASCADE is inherited DB behaviour; `deleteRule` just documents it. No
+   * inverse collection on Contact: nothing needs it yet. `booking.contact.id` is readable
+   * without loading the contact.
    */
-  @ManyToOne(() => Contact, { onDelete: 'CASCADE', nullable: false })
-  @JoinColumn({ name: 'ContactId' })
-  contact: Contact;
+  @ManyToOne(() => Contact, { fieldName: 'ContactId', ref: true, deleteRule: 'cascade' })
+  contact: Ref<Contact>;
 
   /**
-   * Slots.BookingId cascades on delete in the shared schema. Read-only here: no cascade
-   * option, so slots are never written through a booking.
+   * Slots.BookingId cascades on delete in the shared schema. The default persist cascade
+   * means slots added to a new booking are inserted by the same flush.
    */
   @OneToMany(() => Slot, (slot) => slot.booking)
-  slots: Slot[];
+  slots = new Collection<Slot>(this);
 
   /**
    * BookingApi is multi-tenant; NodeBookingApi only ever operates against one real
-   * tenant (see common/constants/tenant.ts). Stamped on insert by TenantSubscriber and
-   * filtered on read via getCurrentTenantId(), both sourced from the request's JWT.
+   * tenant (see common/constants/tenant.ts). Filled on insert by onCreate and filtered on
+   * read by TENANT_FILTER, both sourced from the request's JWT.
    */
-  @Column({ name: 'TenantId', type: 'uuid' })
-  tenantId: string;
+  @Property({ fieldName: 'TenantId', type: 'uuid', onCreate: currentTenantOnCreate })
+  tenantId: Opt<string>;
 }

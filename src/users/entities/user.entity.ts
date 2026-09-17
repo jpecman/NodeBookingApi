@@ -1,4 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { randomUUID } from 'crypto';
+import type { Opt } from '@mikro-orm/core';
+import { Entity, Enum, PrimaryKey, Property } from '@mikro-orm/decorators/legacy';
 import { UserRole } from '../user-role.enum';
 
 /**
@@ -6,27 +8,44 @@ import { UserRole } from '../user-role.enum';
  * tenant_id holds the same real BookingApi tenant GUID Contacts are stamped with — see
  * common/constants/tenant.ts — so a logged-in user's tenant context lines up with rows in
  * the other database.
+ *
+ * Not tenant-filtered: login has to find the user before any tenant context exists.
+ *
+ * Property initializers only run for `new User()`/`em.create()`; MikroORM hydrates
+ * loaded rows without calling them, so they act as insert-time defaults.
  */
-@Entity('users')
+@Entity({ tableName: 'users' })
 export class User {
-  @PrimaryGeneratedColumn('uuid', { name: 'id' })
-  id: string;
+  @PrimaryKey({ fieldName: 'id', type: 'uuid' })
+  id: Opt<string> = randomUUID();
 
-  @Column({ name: 'email', unique: true })
+  @Property({ fieldName: 'email', type: 'string', unique: true })
   email: string;
 
-  @Column({ name: 'password_hash' })
+  @Property({ fieldName: 'password_hash', type: 'string' })
   passwordHash: string;
 
-  @Column({ name: 'role', type: 'enum', enum: UserRole })
+  /** A native Postgres enum, created by the InitUsers migration. */
+  @Enum({ fieldName: 'role', items: () => UserRole, nativeEnumName: 'users_role_enum' })
   role: UserRole;
 
-  @Column({ name: 'tenant_id', type: 'uuid' })
+  @Property({ fieldName: 'tenant_id', type: 'uuid' })
   tenantId: string;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  @Property({
+    fieldName: 'created_at',
+    type: 'datetime',
+    columnType: 'timestamp',
+    defaultRaw: 'now()',
+  })
+  createdAt: Opt<Date> = new Date();
 
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  @Property({
+    fieldName: 'updated_at',
+    type: 'datetime',
+    columnType: 'timestamp',
+    defaultRaw: 'now()',
+    onUpdate: () => new Date(),
+  })
+  updatedAt: Opt<Date> = new Date();
 }

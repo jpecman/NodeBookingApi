@@ -1,46 +1,27 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  OneToMany,
-  PrimaryColumn,
-  PrimaryGeneratedColumn,
-  UpdateDateColumn,
-  VersionColumn,
-} from 'typeorm';
+import { Collection, type Opt } from '@mikro-orm/core';
+import { Entity, Filter, OneToMany, PrimaryKey, Property } from '@mikro-orm/decorators/legacy';
+import { currentTenantOnCreate, TENANT_FILTER } from '../../common/tenancy/tenant.filter';
 import { Pitch } from '../../pitches/entities/pitch.entity';
 
-@Entity('Fields')
+@Entity({ tableName: 'Fields' })
+@Filter(TENANT_FILTER)
 export class Field {
-  @PrimaryColumn({name: 'Id', type: 'uuid'})
+  /** No DB default — BookingApi generates ids app-side, so create() must call randomUUID(). */
+  @PrimaryKey({ fieldName: 'Id', type: 'uuid' })
   id: string;
 
-  /**
-   * BookingApi leaves FieldDb.Name unconstrained — only ContactDb and TenantDb get
-   * explicit lengths. 100 matches TenantDb.Name and keeps this project's habit of
-   * stating a length on every varchar.
-   */
-  @Column({ name: 'Name', type: 'varchar' })
+  /** BookingApi leaves FieldDb.Name unconstrained (text-like), unlike ContactDb. */
+  @Property({ fieldName: 'Name', type: 'string' })
   name: string;
 
   /**
-   * cascade: ['insert'] mirrors CreateFieldRequest.ToDomain(), which builds a field
-   * and its pitches together — so one save(field) persists both. Deliberately not
-   * `true`: removals should stay explicit.
+   * MikroORM cascades persist by default, which mirrors CreateFieldRequest.ToDomain()
+   * building a field and its pitches together — one flush writes both. Removals are
+   * not cascaded (no Cascade.REMOVE / orphanRemoval), so they stay explicit.
    */
-  @OneToMany(() => Pitch, (pitch) => pitch.field, { cascade: ['insert'] })
-  pitches: Pitch[];
+  @OneToMany(() => Pitch, (pitch) => pitch.field)
+  pitches = new Collection<Pitch>(this);
 
-  // @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-  // createdAt: Date;
-
-  // @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  // updatedAt: Date;
-
-  // /** Optimistic concurrency token — stands in for FieldDb's [Timestamp] uint. */
-  // @VersionColumn()
-  // version: number;
-
-  @Column({ name: 'TenantId', type: 'uuid' })
-  tenantId: string;
+  @Property({ fieldName: 'TenantId', type: 'uuid', onCreate: currentTenantOnCreate })
+  tenantId: Opt<string>;
 }

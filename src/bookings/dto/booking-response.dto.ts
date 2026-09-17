@@ -2,29 +2,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ContactResponseDto } from '../../contacts/dto/contact-response.dto';
 import { Slot } from '../../slots/entities/slot.entity';
 import { SlotStatus } from '../../slots/slot-status.enum';
+import { parseTstzRange } from '../../slots/tstzrange';
 import { Booking } from '../entities/bookings.entity';
-
-/** Matches Postgres's text output for a tstzrange, quoted or not: ["a","b") */
-const TSTZRANGE_PATTERN = /^[[(]"?([^",]+)"?,"?([^",]+)"?[\])]$/;
-
-/** Postgres prints "2026-09-14 18:00:00+00"; ISO 8601 wants a "T" and a "+00:00" offset. */
-function parseTimestamptz(value: string): Date {
-  return new Date(value.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00'));
-}
-
-/**
- * BookingApi always writes both bounds, so an empty or unbounded range means the row
- * wasn't written by either app — worth failing loudly rather than inventing dates.
- */
-function parseTstzRange(range: string): { from: Date; to: Date } {
-  const match = TSTZRANGE_PATTERN.exec(range);
-
-  if (!match) {
-    throw new Error(`Unrecognised tstzrange literal: ${range}`);
-  }
-
-  return { from: parseTimestamptz(match[1]), to: parseTimestamptz(match[2]) };
-}
 
 /**
  * Mirrors BookingApi's SlotResponse. Lives here only because nothing else reads slots
@@ -75,8 +54,9 @@ export class SlotResponseDto {
       from,
       to,
       price: Number(slot.price),
-      pitchId: slot.pitchId,
-      bookingId: slot.bookingId,
+      // References know their target's id without being loaded.
+      pitchId: slot.pitch.id,
+      bookingId: slot.booking.id,
       status: slot.status,
       cancellationReason: slot.cancellationReason,
     };
@@ -98,16 +78,19 @@ export class BookingResponseDto {
   slots: SlotResponseDto[];
 
   /**
-   * Requires the query to load `contact` — it's non-optional in the contract, so there is
-   * no sensible fallback. `slots` falls back to [] the same way FieldResponseDto treats
-   * `pitches`, since TypeORM leaves unloaded relations undefined.
+   * Requires the query to populate `contact` — it's non-optional in the contract, so
+   * there is no sensible fallback, and getEntity() throws if it wasn't loaded. `slots`
+   * falls back to [] the same way FieldResponseDto treats `pitches`, since reading an
+   * unpopulated collection throws.
    */
   static fromEntity(booking: Booking): BookingResponseDto {
     return {
       id: booking.id,
       name: booking.name,
-      contact: ContactResponseDto.fromEntity(booking.contact),
-      slots: (booking.slots ?? []).map(SlotResponseDto.fromEntity),
+      contact: ContactResponseDto.fromEntity(booking.contact.getEntity()),
+      slots: booking.slots.isInitialized()
+        ? booking.slots.getItems().map(SlotResponseDto.fromEntity)
+        : [],
     };
   }
 }

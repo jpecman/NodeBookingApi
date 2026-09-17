@@ -10,7 +10,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { UserMeResponseDto } from './dto/user-me-response.dto';
 import { parseDurationMs } from './duration.util';
-import { AuthenticatedUser } from './types/authenticated-user';
+import type { AuthenticatedUser } from './types/authenticated-user';
 
 const TOKEN_COOKIE = 'token';
 

@@ -1,24 +1,30 @@
 import { randomUUID } from 'crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { getCurrentTenantId } from '../common/tenancy/tenant-context';
+import { InjectEntityManager, InjectRepository } from '@mikro-orm/nestjs';
+import { EntityManager, EntityRepository } from '@mikro-orm/postgresql';
+import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { Contact } from './entities/contact.entity';
 
+/**
+ * Tenant scoping is implicit here: Contact carries TENANT_FILTER, so every find and
+ * nativeDelete below is already limited to the request's tenant, and onCreate fills
+ * tenantId on insert.
+ */
 @Injectable()
 export class ContactsService {
   private readonly logger = new Logger(ContactsService.name);
 
   constructor(
-    @InjectRepository(Contact)
-    private readonly contacts: Repository<Contact>,
+    @InjectRepository(Contact, BOOKING_CONTEXT)
+    private readonly contacts: EntityRepository<Contact>,
+    @InjectEntityManager(BOOKING_CONTEXT)
+    private readonly em: EntityManager,
   ) {}
 
   async create(dto: CreateContactDto): Promise<Contact> {
-    // tenantId is stamped by TenantSubscriber.beforeInsert() from the request's tenant
-    // context, not set here.
+    // create() only schedules the insert; flush() runs it.
     const contact = this.contacts.create({
       id: randomUUID(),
       firstName: dto.firstName,
@@ -28,23 +34,20 @@ export class ContactsService {
       show: dto.show ?? false,
     });
 
-    // A duplicate email raises a Postgres 23505 here; AllExceptionsFilter turns
-    // that into a 409 rather than letting it bubble up as a 500.
-    const saved = await this.contacts.save(contact);
-    this.logger.log(`Created contact ${saved.id}`);
+    // A duplicate email raises UniqueConstraintViolationException here;
+    // AllExceptionsFilter turns that into a 409 rather than letting it bubble up as a 500.
+    await this.em.flush();
+    this.logger.log(`Created contact ${contact.id}`);
 
-    return saved;
+    return contact;
   }
 
   findAll(): Promise<Contact[]> {
-    return this.contacts.find({
-      where: { tenantId: getCurrentTenantId() },
-      order: { lastName: 'ASC', firstName: 'ASC' },
-    });
+    return this.contacts.findAll({ orderBy: { lastName: 'asc', firstName: 'asc' } });
   }
 
   async findOne(id: string): Promise<Contact> {
-    const contact = await this.contacts.findOneBy({ id, tenantId: getCurrentTenantId() });
+    const contact = await this.contacts.findOne({ id });
 
     if (!contact) {
       this.logger.warn(`Contact ${id} not found`);
@@ -65,18 +68,20 @@ export class ContactsService {
     if ('email' in dto) contact.email = email ?? '';
     if ('phone' in dto) contact.phone = phone ?? '';
 
-    const saved = await this.contacts.save(contact);
+    // No save(): findOne() left the contact tracked, so flush() issues an UPDATE for
+    // exactly the columns that changed (or nothing, if none did).
+    await this.em.flush();
     this.logger.log(`Updated contact ${id}`);
 
-    return saved;
+    return contact;
   }
 
   async remove(id: string): Promise<void> {
-    // Bookings.ContactId cascades on delete in the shared BookingApi schema, so this
-    // also deletes that contact's bookings.
-    const result = await this.contacts.delete({ id, tenantId: getCurrentTenantId() });
+    // A single DELETE, bypassing the unit of work. Bookings.ContactId cascades on
+    // delete in the shared BookingApi schema, so this also deletes that contact's bookings.
+    const affected = await this.contacts.nativeDelete({ id });
 
-    if (!result.affected) {
+    if (!affected) {
       this.logger.warn(`Contact ${id} not found`);
       throw new NotFoundException(`Contact ${id} not found`);
     }

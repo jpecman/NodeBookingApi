@@ -1,23 +1,29 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { join } from 'path';
+import { MikroOrmModule } from '@mikro-orm/nestjs';
+import { PostgreSqlDriver } from '@mikro-orm/postgresql';
+import { BOOKING_MIGRATIONS } from './migrations';
+import { BOOKING_CONTEXT, createOrmOptions } from './mikro-orm.options';
 
 @Module({
   imports: [
-    TypeOrmModule.forRootAsync({
+    MikroOrmModule.forRootAsync({
+      contextName: BOOKING_CONTEXT,
+      driver: PostgreSqlDriver,
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        type: 'postgres' as const,
-        url: config.getOrThrow<string>('database.url'),
-        // Entities are picked up from every TypeOrmModule.forFeature() registration.
+        ...createOrmOptions({
+          clientUrl: config.getOrThrow<string>('database.url'),
+          debug: config.get<string>('nodeEnv') === 'development',
+          migrationsDir: 'migrations',
+          migrations: BOOKING_MIGRATIONS,
+        }),
+        // Entities come from every MikroOrmModule.forFeature([...], BOOKING_CONTEXT).
         autoLoadEntities: true,
-        migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
-        // Schema changes go through migrations only — never let TypeORM alter the DB.
-        synchronize: false,
-        migrationsRun: false,
-        logging: config.get<string>('nodeEnv') === 'development' ? ['query', 'error'] : ['error'],
+        // Per-request context for both databases is set up once in AppModule
+        // (MikroOrmModule.forMiddleware()), not per context.
+        registerRequestContext: false,
       }),
     }),
   ],

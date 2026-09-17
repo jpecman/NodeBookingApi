@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { AUTH_CONNECTION } from '../database/auth-database.module';
+import { MikroOrmModule } from '@mikro-orm/nestjs';
+import { AUTH_CONTEXT } from '../database/mikro-orm.options';
 import { User } from './entities/user.entity';
 import { UsersService } from './users.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User], AUTH_CONNECTION)],
+  imports: [MikroOrmModule.forFeature([User], AUTH_CONTEXT)],
   providers: [UsersService],
   exports: [UsersService],
 })

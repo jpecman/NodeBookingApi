@@ -1,18 +1,20 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Booking } from './entities/bookings.entity';
-import { Repository } from 'typeorm';
-import { getCurrentTenantId } from 'src/common/tenancy/tenant-context';
-import { SearchBookingsDto } from './dto/search-booking.dto';
-import { SlotStatus } from 'src/slots/slot-status.enum';
-import { CreateBookingDto } from './dto/create-booking.dto';
-import { Field } from 'src/fields/entities/field.entity';
-import { Slot } from 'src/slots/entities/slot.entity';
-import { ContactsService } from 'src/contacts/contacts.service';
-import { FieldsService } from 'src/fields/fields.service';
 import { randomUUID } from 'crypto';
-import { Pitch } from 'src/pitches/entities/pitch.entity';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import { PopulateHint } from '@mikro-orm/core';
+import { InjectEntityManager, InjectRepository } from '@mikro-orm/nestjs';
+import { EntityManager, EntityRepository, raw } from '@mikro-orm/postgresql';
 import { DateTime } from 'luxon';
+import { getCurrentTenantId } from '../common/tenancy/tenant-context';
+import { ContactsService } from '../contacts/contacts.service';
+import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
+import { FieldsService } from '../fields/fields.service';
+import { Pitch } from '../pitches/entities/pitch.entity';
+import { Slot } from '../slots/entities/slot.entity';
+import { SlotStatus } from '../slots/slot-status.enum';
+import { formatTstzRange, parseTstzRange } from '../slots/tstzrange';
+import { CreateBookingDto } from './dto/create-booking.dto';
+import { SearchBookingsDto } from './dto/search-booking.dto';
+import { Booking } from './entities/bookings.entity';
 
 const VENUE_ZONE = 'Europe/Prague'; // BookingApi: appsettings.json → Venue:TimeZone
 const MAX_OCCURRENCES = 52; // BookingApi: WeeklyRecurrence.MaxOccurences
@@ -35,77 +37,83 @@ export class BookingsService {
   private readonly logger = new Logger(BookingsService.name);
 
   constructor(
-    @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
-    @InjectRepository(Slot) private readonly slots: Repository<Slot>,
+    @InjectRepository(Booking, BOOKING_CONTEXT)
+    private readonly bookings: EntityRepository<Booking>,
+    @InjectEntityManager(BOOKING_CONTEXT)
+    private readonly em: EntityManager,
     private readonly contactsService: ContactsService,
     private readonly fieldsService: FieldsService,
   ) {}
 
-  findAll(search: SearchBookingsDto): Promise<Booking[]> {
-    this.logger.error('test');
-    const query = this.bookings
-      .createQueryBuilder('booking')
-      .innerJoinAndSelect('booking.contact', 'contact')
-      .innerJoinAndSelect('booking.slots', 'slot')
-      .where('booking.tenantId = :tenantId', { tenantId: getCurrentTenantId() });
-    //   .andWhere('lower(slot.duration) >= :from', { from: search.from })
-    //   .andWhere('lower(slot.duration) <= :to', { to: search.to });
+  /**
+   * Bookings with at least one slot starting within [from, to] (both inclusive) — and,
+   * unless includeCancelled, that slot isn't cancelled. Each booking comes back with its
+   * contact and *all* of its slots; the slot conditions only decide which bookings match.
+   * Tenant scoping comes from TENANT_FILTER on Booking (and on Contact/Slot as they're
+   * populated).
+   */
+  async findAll(search: SearchBookingsDto): Promise<Booking[]> {
+    const bookings = await this.bookings.find(
+      {
+        // A nested condition on a collection means "has at least one slot that…"; MikroORM
+        // joins Slots for it.
+        slots: {
+          // Duration is a tstzrange; its lower bound is the slot's start. The callback gets
+          // the alias MikroORM gave the joined Slots table.
+          [raw((alias) => `lower(${alias}."Duration")`)]: { $gte: search.from, $lte: search.to },
+          // Optional conditions are spread in only when they apply, so an absent filter
+          // adds nothing to the WHERE clause.
+          ...(search.includeCancelled ? {} : { status: { $ne: SlotStatus.Cancelled } }),
+        },
+        ...(search.contactId ? { contact: search.contactId } : {}),
+      },
+      {
+        populate: ['contact', 'slots'],
+        // Load every slot of a matching booking, not just the ones matching `where`.
+        populateWhere: PopulateHint.ALL,
+      },
+    );
 
-    // if (!search.includeCancelled) {
-    //   query.andWhere('slot.status != :cancelled', { cancelled: SlotStatus.Cancelled });
-    // }
-    // if (search.contactId) {
-    //   query.andWhere('booking.contactId = :contactId', { contactId: search.contactId });
-    // }
+    this.logger.log(`bookings count: ${bookings.length}`);
 
-    return query.getMany();
+    return bookings;
   }
 
   async create(dto: CreateBookingDto): Promise<Booking> {
-    const tenantId = getCurrentTenantId();
-
-    const contact = await this.contactsService.findOne(dto.contactId); // throws NotFoundException
+    await this.contactsService.findOne(dto.contactId); // throws NotFoundException
     const field = await this.fieldsService.findOne(dto.fieldId);
+    const pitches = field.pitches.getItems();
 
     // 2–4.
     const sessions = this.expandWeekly(dto);
     const occupied = await this.findOccupied(field.id, sessions);
     const allocations = dto.isWholeField
-      ? this.allocateWholeField(field.pitches, sessions, occupied)
-      : this.allocateHalfField(field.pitches, sessions, occupied);
+      ? this.allocateWholeField(pitches, sessions, occupied)
+      : this.allocateHalfField(pitches, sessions, occupied);
 
-    // 5. All or nothing: a failed slot insert must not leave an empty booking behind.
-    const bookingId = randomUUID();
-    await this.bookings.manager.transaction(async (em) => {
-      await em.insert(Booking, {
-        id: bookingId,
-        name: dto.name,
-        contactId: dto.contactId,
-        tenantId,
-      });
-      await em.insert(
-        Slot,
-        allocations.map(({ pitchId, from, to }) => ({
-          id: randomUUID(),
-          name: dto.name, // BookingApi: slot names mirror the booking name
-          duration: `[${from.toISOString()},${to.toISOString()})`,
-          price: dto.price.toString(),
-          pitchId,
-          bookingId,
-          status: SlotStatus.Booked,
-          cancellationReason: null,
-          tenantId,
-        })),
-      );
+    // 5. Slots given inline become entities too, with `booking` set from the collection,
+    // and the default persist cascade means one flush inserts the booking and all its
+    // slots — in a single transaction, so a failed slot insert can't leave an empty
+    // booking behind. tenantId is filled on every row by the entities' onCreate hook.
+    const booking = this.bookings.create({
+      id: randomUUID(),
+      name: dto.name,
+      contact: dto.contactId, // a primary key is enough for a relation
+      slots: allocations.map(({ pitchId, from, to }) => ({
+        id: randomUUID(),
+        name: dto.name, // BookingApi: slot names mirror the booking name
+        duration: formatTstzRange(from, to),
+        price: dto.price.toString(),
+        pitch: pitchId,
+        status: SlotStatus.Booked,
+      })),
     });
 
-    this.logger.log(`Created booking ${bookingId} with ${allocations.length} slots`);
+    await this.em.flush();
+    this.logger.log(`Created booking ${booking.id} with ${allocations.length} slots`);
 
-    // 6.
-    return this.bookings.findOneOrFail({
-      where: { id: bookingId, tenantId },
-      relations: { contact: true, slots: true },
-    });
+    // 6. `slots` is already filled in; `contact` is only a reference until populated.
+    return this.em.populate(booking, ['contact']);
   }
 
   /** WeeklyRecurrence.Create + Expand. */
@@ -144,21 +152,25 @@ export class BookingsService {
   }
 
   /** SlotGateway.GetExistingSlotsForDaysAsync. */
-  private findOccupied(fieldId: string, sessions: Period[]): Promise<Allocation[]> {
-    return this.slots
-      .createQueryBuilder('slot')
-      .innerJoin('slot.pitch', 'pitch')
-      .select('slot.pitchId', 'pitchId')
-      .addSelect('lower(slot.duration)', 'from') // pg parses timestamptz → Date
-      .addSelect('upper(slot.duration)', 'to')
-      .where('pitch.fieldId = :fieldId', { fieldId })
-      .andWhere('slot.tenantId = :tenantId', { tenantId: getCurrentTenantId() })
-      .andWhere('slot.status != :cancelled', { cancelled: SlotStatus.Cancelled })
-      .andWhere('slot.duration && tstzrange(:from, :to)', {
-        from: sessions[0].from,
-        to: sessions[sessions.length - 1].to,
+  private async findOccupied(fieldId: string, sessions: Period[]): Promise<Allocation[]> {
+    const slots = await this.em
+      .createQueryBuilder(Slot, 'slot')
+      .select(['pitch', 'duration'])
+      .where({
+        pitch: { field: fieldId }, // joins Pitch automatically
+        // QueryBuilder doesn't apply TENANT_FILTER, so scope it explicitly.
+        tenantId: getCurrentTenantId(),
+        status: { $ne: SlotStatus.Cancelled },
       })
-      .getRawMany<Allocation>();
+      .andWhere('slot."Duration" && tstzrange(?, ?)', [
+        sessions[0].from,
+        sessions[sessions.length - 1].to,
+      ])
+      .getResultList();
+
+    // Duration comes back as the raw range literal; `pitch` is an unloaded reference
+    // whose id is known.
+    return slots.map((slot) => ({ pitchId: slot.pitch.id, ...parseTstzRange(slot.duration) }));
   }
 
   /** FieldAllocator.WholeField: every pitch, and nothing else may overlap. */

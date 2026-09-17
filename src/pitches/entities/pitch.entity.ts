@@ -1,34 +1,35 @@
+import type { Opt, Ref } from '@mikro-orm/core';
 import {
-  Column,
   Entity,
+  Filter,
   Index,
-  JoinColumn,
   ManyToOne,
-  PrimaryColumn,
-} from 'typeorm';
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/decorators/legacy';
+import { currentTenantOnCreate, TENANT_FILTER } from '../../common/tenancy/tenant.filter';
 import { Field } from '../../fields/entities/field.entity';
 
-@Entity('Pitches')
+@Entity({ tableName: 'Pitches' })
+@Filter(TENANT_FILTER)
 export class Pitch {
-  @PrimaryColumn({ name: 'Id', type: 'uuid'})
+  /** No DB default — BookingApi generates ids app-side. */
+  @PrimaryKey({ fieldName: 'Id', type: 'uuid' })
   id: string;
 
-  @Column({ name: 'Name', type: 'varchar'})
+  @Property({ fieldName: 'Name', type: 'string' })
   name: string;
-
-  @Column({ name: 'FieldId', type: 'uuid' })
-  @Index('ix_pitches_field_id')
-  fieldId: string;
 
   /**
    * PitchDb marks FieldId [Required], which in EF implies cascade delete — deleting a
-   * field takes its pitches with it. Spelled out here because TypeORM defaults to NO
-   * ACTION instead.
+   * field takes its pitches with it. `deleteRule` only documents that for the schema
+   * generator; the cascade itself is the DB's. `pitch.field.id` is readable without
+   * loading the field.
    */
-  @ManyToOne(() => Field, (field) => field.pitches, { onDelete: 'CASCADE', nullable: false })
-  @JoinColumn({ name: 'FieldId' })
-  field: Field;
+  @ManyToOne(() => Field, { fieldName: 'FieldId', ref: true, deleteRule: 'cascade' })
+  @Index({ name: 'ix_pitches_field_id' })
+  field: Ref<Field>;
 
-  @Column({ name: 'TenantId', type: 'uuid' })
-  tenantId: string;
+  @Property({ fieldName: 'TenantId', type: 'uuid', onCreate: currentTenantOnCreate })
+  tenantId: Opt<string>;
 }

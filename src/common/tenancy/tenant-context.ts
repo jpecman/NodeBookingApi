@@ -8,7 +8,8 @@ export interface TenantStore {
 /**
  * Opened per request by TenantContextInterceptor, which wraps the downstream handler in
  * run() using the user JwtStrategy.validate() returned. It covers the controller, the
- * services and the TypeORM calls (including TenantSubscriber) beneath them.
+ * services and the MikroORM calls beneath them — including TENANT_FILTER and the
+ * tenantId onCreate hook (tenant.filter.ts), which read it at query/flush time.
  */
 export const tenantContext = new AsyncLocalStorage<TenantStore>();
 

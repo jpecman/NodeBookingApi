@@ -1,16 +1,19 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Slot } from 'src/slots/entities/slot.entity';
-import { Booking } from './entities/bookings.entity';
+import { MikroOrmModule } from '@mikro-orm/nestjs';
+import { ContactsModule } from '../contacts/contacts.module';
+import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
+import { FieldsModule } from '../fields/fields.module';
+import { Slot } from '../slots/entities/slot.entity';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
-import { ContactsService } from 'src/contacts/contacts.service';
-import { FieldsService } from 'src/fields/fields.service';
-import { ContactsModule } from 'src/contacts/contacts.module';
-import { FieldsModule } from 'src/fields/fields.module';
+import { Booking } from './entities/bookings.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Booking, Slot]), ContactsModule, FieldsModule],
+  imports: [
+    MikroOrmModule.forFeature([Booking, Slot], BOOKING_CONTEXT),
+    ContactsModule,
+    FieldsModule,
+  ],
   controllers: [BookingsController],
   providers: [BookingsService],
   exports: [BookingsService],

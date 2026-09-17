@@ -23,9 +23,11 @@ export class FieldResponseDto {
     return {
       id: field.id,
       name: field.name,
-      // TypeORM leaves `pitches` undefined unless the query asked for the relation,
-      // so `?? []` is what stops a plain find() from turning this into a 500.
-      pitches: (field.pitches ?? []).map(PitchResponseDto.fromEntity),
+      // Reading an unpopulated collection throws, so the isInitialized() check is what
+      // stops a plain find() without `populate` from turning this into a 500.
+      pitches: field.pitches.isInitialized()
+        ? field.pitches.getItems().map(PitchResponseDto.fromEntity)
+        : [],
       // createdAt: field.createdAt,
       // updatedAt: field.updatedAt,
     };

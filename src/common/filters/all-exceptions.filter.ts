@@ -6,12 +6,9 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { UniqueConstraintViolationException } from '@mikro-orm/core';
 import { Request, Response } from 'express';
-import { QueryFailedError } from 'typeorm';
 import { ErrorResponseDto } from '../dto/error-response.dto';
-
-/** Postgres SQLSTATE for unique_violation. */
-const UNIQUE_VIOLATION = '23505';
 
 /**
  * Friendly messages for constraints we know about, so a 409 says something useful
@@ -21,10 +18,11 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   IX_Contacts_TenantId_Email: 'A contact with this email address already exists.',
 };
 
-interface PostgresDriverError {
-  code?: string;
-  constraint?: string;
-}
+/**
+ * MikroORM translates SQLSTATE 23505 into UniqueConstraintViolationException and copies
+ * the pg error's own fields onto it, `constraint` among them.
+ */
+type UniqueViolation = UniqueConstraintViolationException & { constraint?: string };
 
 /**
  * The single place where anything thrown becomes an HTTP response.
@@ -63,20 +61,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return { ...this.fromHttpException(exception) };
     }
 
-    if (exception instanceof QueryFailedError) {
-      const driverError = (exception as QueryFailedError & { driverError?: PostgresDriverError })
-        .driverError;
-
-      if (driverError?.code === UNIQUE_VIOLATION) {
-        const constraint = driverError.constraint ?? '';
-        this.logger.warn(
-          `Unique violation on ${constraint || 'unknown constraint'} for ${request.method} ${request.url}`,
-        );
-        return {
-          status: HttpStatus.CONFLICT,
-          message: CONSTRAINT_MESSAGES[constraint] ?? 'A record with these values already exists.',
-        };
-      }
+    if (exception instanceof UniqueConstraintViolationException) {
+      const constraint = (exception as UniqueViolation).constraint ?? '';
+      this.logger.warn(
+        `Unique violation on ${constraint || 'unknown constraint'} for ${request.method} ${request.url}`,
+      );
+      return {
+        status: HttpStatus.CONFLICT,
+        message: CONSTRAINT_MESSAGES[constraint] ?? 'A record with these values already exists.',
+      };
     }
 
     this.logger.error(

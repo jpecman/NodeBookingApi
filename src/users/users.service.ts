@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { AUTH_CONNECTION } from '../database/auth-database.module';
+import { InjectEntityManager, InjectRepository } from '@mikro-orm/nestjs';
+import { EntityManager, EntityRepository } from '@mikro-orm/postgresql';
+import { AUTH_CONTEXT } from '../database/mikro-orm.options';
 import { User } from './entities/user.entity';
 import { UserRole } from './user-role.enum';
 
@@ -15,24 +15,32 @@ export interface CreateUserInput {
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectRepository(User, AUTH_CONNECTION)
-    private readonly users: Repository<User>,
+    @InjectRepository(User, AUTH_CONTEXT)
+    private readonly users: EntityRepository<User>,
+    @InjectEntityManager(AUTH_CONTEXT)
+    private readonly em: EntityManager,
   ) {}
 
   findByEmail(email: string): Promise<User | null> {
-    return this.users.findOneBy({ email });
+    return this.users.findOne({ email });
   }
 
   findById(id: string): Promise<User | null> {
-    return this.users.findOneBy({ id });
+    return this.users.findOne({ id });
   }
 
   async create(input: CreateUserInput): Promise<User> {
     const user = this.users.create(input);
-    return this.users.save(user);
+    await this.em.flush();
+    return user;
   }
 
+  /**
+   * A user loaded in this request is already tracked, so persist() changes nothing for it;
+   * flush() writes only the columns that changed.
+   */
   async save(user: User): Promise<User> {
-    return this.users.save(user);
+    await this.em.persist(user).flush();
+    return user;
   }
 }

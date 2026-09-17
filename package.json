@@ -12,16 +12,15 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "test": "jest",
+    "test": "NODE_OPTIONS='--experimental-vm-modules --disable-warning=ExperimentalWarning' jest",
     "security": "./scripts/security-check.sh",
     "openapi:generate": "ts-node src/generate-openapi.ts",
-    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/data-source.ts",
-    "migration:create": "typeorm-ts-node-commonjs migration:create",
-    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
-    "migration:generate:auth": "typeorm-ts-node-commonjs migration:generate -d src/database/auth-data-source.ts",
-    "migration:run:auth": "typeorm-ts-node-commonjs migration:run -d src/database/auth-data-source.ts",
-    "migration:revert:auth": "typeorm-ts-node-commonjs migration:revert -d src/database/auth-data-source.ts",
+    "migration:generate": "ts-node src/database/migrate.ts booking create",
+    "migration:run": "ts-node src/database/migrate.ts booking up",
+    "migration:revert": "ts-node src/database/migrate.ts booking down",
+    "migration:generate:auth": "ts-node src/database/migrate.ts auth create",
+    "migration:run:auth": "ts-node src/database/migrate.ts auth up",
+    "migration:revert:auth": "ts-node src/database/migrate.ts auth down",
     "seed:auth-user": "ts-node src/database/seed-auth-user.ts"
   },
   "jest": {
@@ -41,6 +40,11 @@
     "multer": "^2.3.0"
   },
   "dependencies": {
+    "@mikro-orm/core": "^7.2.0",
+    "@mikro-orm/decorators": "^7.2.0",
+    "@mikro-orm/migrations": "^7.2.0",
+    "@mikro-orm/nestjs": "^7.1.0",
+    "@mikro-orm/postgresql": "^7.2.0",
     "@nestjs/common": "^11.2.5",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.28",
@@ -49,7 +53,6 @@
     "@nestjs/platform-express": "^11.1.28",
     "@nestjs/swagger": "^11.4.6",
     "@nestjs/terminus": "^11.1.1",
-    "@nestjs/typeorm": "^11.0.3",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -60,8 +63,7 @@
     "passport-jwt": "^4.0.1",
     "pg": "^8.22.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2",
-    "typeorm": "^1.1.0"
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

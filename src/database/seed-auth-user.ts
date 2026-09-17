@@ -1,9 +1,16 @@
 import 'reflect-metadata';
 import * as bcrypt from 'bcrypt';
+import { config as loadDotenv } from 'dotenv';
+import { MikroORM } from '@mikro-orm/postgresql';
 import { DEFAULT_TENANT_ID } from '../common/constants/tenant';
 import { User } from '../users/entities/user.entity';
 import { UserRole } from '../users/user-role.enum';
-import authDataSource from './auth-data-source';
+import { AUTH_MIGRATIONS } from './migrations/auth';
+import { createOrmOptions } from './mikro-orm.options';
+
+// Runs outside Nest, so it gets no ConfigModule and no direnv guarantee — load .env
+// explicitly here.
+loadDotenv();
 
 const BCRYPT_ROUNDS = 10;
 
@@ -17,11 +24,19 @@ async function seed(): Promise<void> {
   const password = process.env.SEED_PASSWORD ?? 'ChangeMe123!';
   const role = (process.env.SEED_ROLE as UserRole | undefined) ?? UserRole.Administrator;
 
-  const dataSource = await authDataSource.initialize();
+  const orm = await MikroORM.init({
+    ...createOrmOptions({
+      clientUrl: process.env.AUTH_DATABASE_URL,
+      migrationsDir: 'migrations/auth',
+      migrations: AUTH_MIGRATIONS,
+    }),
+    entities: [User],
+  });
 
   try {
-    const repository = dataSource.getRepository(User);
-    const existing = await repository.findOneBy({ email });
+    // Outside a request there's no RequestContext, so work on an explicit fork.
+    const em = orm.em.fork();
+    const existing = await em.findOne(User, { email });
 
     if (existing) {
       console.log(`User ${email} already exists, skipping.`);
@@ -29,12 +44,12 @@ async function seed(): Promise<void> {
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const user = repository.create({ email, passwordHash, role, tenantId: DEFAULT_TENANT_ID });
-    await repository.save(user);
+    em.create(User, { email, passwordHash, role, tenantId: DEFAULT_TENANT_ID });
+    await em.flush();
 
     console.log(`Seeded user ${email} (role: ${role}, tenant: ${DEFAULT_TENANT_ID}).`);
   } finally {
-    await dataSource.destroy();
+    await orm.close(true);
   }
 }
 
