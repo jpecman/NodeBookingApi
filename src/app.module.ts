@@ -13,6 +13,7 @@ import { UsersModule } from './users/users.module';
 import { FieldsModule } from './fields/fields.module';
 import { PitchesModule } from './pitches/pitches.module';
 import { BookingsModule } from './bookings/bookings.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { BookingsModule } from './bookings/bookings.module';
     HealthModule,
     PitchesModule,
     BookingsModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}
