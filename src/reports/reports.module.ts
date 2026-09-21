@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
-import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
 import { Slot } from '../slots/entities/slot.entity';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
@@ -11,7 +10,7 @@ import { ReportsService } from './reports.service';
  * discovered via their own modules' forFeature.
  */
 @Module({
-  imports: [MikroOrmModule.forFeature([Slot], BOOKING_CONTEXT)],
+  imports: [MikroOrmModule.forFeature([Slot])],
   controllers: [ReportsController],
   providers: [ReportsService],
 })

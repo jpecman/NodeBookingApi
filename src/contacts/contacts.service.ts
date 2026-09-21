@@ -1,8 +1,6 @@
-import { randomUUID } from 'crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectEntityManager, InjectRepository } from '@mikro-orm/nestjs';
+import { InjectRepository } from '@mikro-orm/nestjs';
 import { EntityManager, EntityRepository } from '@mikro-orm/postgresql';
-import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { Contact } from './entities/contact.entity';
@@ -17,20 +15,18 @@ export class ContactsService {
   private readonly logger = new Logger(ContactsService.name);
 
   constructor(
-    @InjectRepository(Contact, BOOKING_CONTEXT)
+    @InjectRepository(Contact)
     private readonly contacts: EntityRepository<Contact>,
-    @InjectEntityManager(BOOKING_CONTEXT)
     private readonly em: EntityManager,
   ) {}
 
   async create(dto: CreateContactDto): Promise<Contact> {
     // create() only schedules the insert; flush() runs it.
     const contact = this.contacts.create({
-      id: randomUUID(),
       firstName: dto.firstName,
       lastName: dto.lastName,
-      email: dto.email ?? '',
-      phone: dto.phone ?? '',
+      email: dto.email ?? null,
+      phone: dto.phone ?? null,
       show: dto.show ?? false,
     });
 
@@ -60,13 +56,12 @@ export class ContactsService {
   async update(id: string, dto: UpdateContactDto): Promise<Contact> {
     const contact = await this.findOne(id);
 
-    // Only assign what the caller actually sent — an absent key must not clear a
-    // column. email/phone go through '' (their NOT NULL "empty" encoding) rather
-    // than null, since the underlying column can't hold null.
+    // Only assign what the caller actually sent — an absent key must not clear a column,
+    // while an explicit null must (both columns are nullable).
     const { email, phone, ...rest } = dto;
     Object.assign(contact, rest);
-    if ('email' in dto) contact.email = email ?? '';
-    if ('phone' in dto) contact.phone = phone ?? '';
+    if ('email' in dto) contact.email = email ?? null;
+    if ('phone' in dto) contact.phone = phone ?? null;
 
     // No save(): findOne() left the contact tracked, so flush() issues an UPDATE for
     // exactly the columns that changed (or nothing, if none did).
@@ -77,8 +72,8 @@ export class ContactsService {
   }
 
   async remove(id: string): Promise<void> {
-    // A single DELETE, bypassing the unit of work. Bookings.ContactId cascades on
-    // delete in the shared BookingApi schema, so this also deletes that contact's bookings.
+    // A single DELETE, bypassing the unit of work. bookings.contact_id cascades on
+    // delete, so this also deletes that contact's bookings and their slots.
     const affected = await this.contacts.nativeDelete({ id });
 
     if (!affected) {

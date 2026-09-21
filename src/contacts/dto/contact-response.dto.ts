@@ -20,14 +20,13 @@ export class ContactResponseDto {
   @ApiProperty()
   show: boolean;
 
-  /** '' is BookingApi's NOT NULL encoding of "none" — surface it as null on the wire. */
   static fromEntity(contact: Contact): ContactResponseDto {
     return {
       id: contact.id,
       firstName: contact.firstName,
       lastName: contact.lastName,
-      email: contact.email || null,
-      phone: contact.phone || null,
+      email: contact.email,
+      phone: contact.phone,
       show: contact.show,
     };
   }

@@ -4,9 +4,6 @@ export interface AppConfiguration {
   database: {
     url: string;
   };
-  authDatabase: {
-    url: string;
-  };
   jwt: {
     secret: string;
     expiresIn: string;
@@ -22,9 +19,6 @@ export default (): AppConfiguration => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   database: {
     url: process.env.DATABASE_URL as string,
-  },
-  authDatabase: {
-    url: process.env.AUTH_DATABASE_URL as string,
   },
   jwt: {
     secret: process.env.JWT_SECRET as string,

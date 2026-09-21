@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
-import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
 import { ContactsController } from './contacts.controller';
 import { ContactsService } from './contacts.service';
 import { Contact } from './entities/contact.entity';
 
 @Module({
-  imports: [MikroOrmModule.forFeature([Contact], BOOKING_CONTEXT)],
+  imports: [MikroOrmModule.forFeature([Contact])],
   controllers: [ContactsController],
   providers: [ContactsService],
   exports: [ContactsService],

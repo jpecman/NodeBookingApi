@@ -27,10 +27,6 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsNotEmpty()
-  AUTH_DATABASE_URL: string;
-
-  @IsString()
-  @IsNotEmpty()
   JWT_SECRET: string;
 
   @IsString()

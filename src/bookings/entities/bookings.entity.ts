@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Collection, type Opt, type Ref } from '@mikro-orm/core';
 import {
   Entity,
@@ -11,45 +12,48 @@ import { currentTenantOnCreate, TENANT_FILTER } from '../../common/tenancy/tenan
 import { Contact } from '../../contacts/entities/contact.entity';
 import { Slot } from '../../slots/entities/slot.entity';
 
-/**
- * Maps onto BookingApi's own "Bookings" table (shared BookingDb on nunicek-ts), not a
- * table NodeBookingApi owns or migrates — same arrangement as Contact. Column names and
- * casing mirror BookingDb exactly.
- *
- * BookingDb's [Timestamp] uint Version is deliberately absent: EF maps it to Postgres's
- * xmin system column, which isn't mapped here. Concurrent updates through this API can
- * therefore overwrite each other silently.
- */
-@Entity({ tableName: 'Bookings' })
+/** NodeBookingApi-owned table, created by the InitBookingSchema migration. */
+@Entity({ tableName: 'bookings' })
 @Filter(TENANT_FILTER)
 export class Booking {
-  /** No DB default — BookingApi generates ids app-side, so create() must call randomUUID(). */
-  @PrimaryKey({ fieldName: 'Id', type: 'uuid' })
-  id: string;
+  @PrimaryKey({ fieldName: 'id', type: 'uuid' })
+  id: Opt<string> = randomUUID();
 
-  @Property({ fieldName: 'Name', type: 'text' })
+  @Property({ fieldName: 'name', type: 'text' })
   name: string;
 
   /**
-   * ON DELETE CASCADE is inherited DB behaviour; `deleteRule` just documents it. No
-   * inverse collection on Contact: nothing needs it yet. `booking.contact.id` is readable
-   * without loading the contact.
+   * Deleting a contact deletes their bookings — the cascade is declared by the migration;
+   * `deleteRule` documents it here. No inverse collection on Contact: nothing needs one
+   * yet, and `booking.contact.id` is readable without loading the contact.
    */
-  @ManyToOne(() => Contact, { fieldName: 'ContactId', ref: true, deleteRule: 'cascade' })
+  @ManyToOne(() => Contact, { fieldName: 'contact_id', ref: true, deleteRule: 'cascade' })
   contact: Ref<Contact>;
 
   /**
-   * Slots.BookingId cascades on delete in the shared schema. The default persist cascade
-   * means slots added to a new booking are inserted by the same flush.
+   * slots.booking_id cascades on delete. The default persist cascade means slots created
+   * with a booking are inserted by the same flush.
    */
   @OneToMany(() => Slot, (slot) => slot.booking)
   slots = new Collection<Slot>(this);
 
-  /**
-   * BookingApi is multi-tenant; NodeBookingApi only ever operates against one real
-   * tenant (see common/constants/tenant.ts). Filled on insert by onCreate and filtered on
-   * read by TENANT_FILTER, both sourced from the request's JWT.
-   */
-  @Property({ fieldName: 'TenantId', type: 'uuid', onCreate: currentTenantOnCreate })
+  @Property({ fieldName: 'tenant_id', type: 'uuid', onCreate: currentTenantOnCreate })
   tenantId: Opt<string>;
+
+  @Property({
+    fieldName: 'created_at',
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+  })
+  createdAt: Opt<Date> = new Date();
+
+  @Property({
+    fieldName: 'updated_at',
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+    onUpdate: () => new Date(),
+  })
+  updatedAt: Opt<Date> = new Date();
 }

@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { getEntityManagerToken, getRepositoryToken } from '@mikro-orm/nestjs';
-import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
+import { getRepositoryToken } from '@mikro-orm/nestjs';
+import { EntityManager } from '@mikro-orm/postgresql';
 import { ContactsService } from './contacts.service';
 import { Contact } from './entities/contact.entity';
 
@@ -22,8 +22,8 @@ describe('ContactsService', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         ContactsService,
-        { provide: getRepositoryToken(Contact, BOOKING_CONTEXT), useValue: repository },
-        { provide: getEntityManagerToken(BOOKING_CONTEXT), useValue: em },
+        { provide: getRepositoryToken(Contact), useValue: repository },
+        { provide: EntityManager, useValue: em },
       ],
     }).compile();
 

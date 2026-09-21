@@ -15,7 +15,7 @@ import { ErrorResponseDto } from '../dto/error-response.dto';
  * without leaking the raw driver detail (which echoes the offending values).
  */
 const CONSTRAINT_MESSAGES: Record<string, string> = {
-  IX_Contacts_TenantId_Email: 'A contact with this email address already exists.',
+  ux_contacts_tenant_id_email: 'A contact with this email address already exists.',
 };
 
 /**

@@ -4,10 +4,9 @@ import { Entity, Enum, PrimaryKey, Property } from '@mikro-orm/decorators/legacy
 import { UserRole } from '../user-role.enum';
 
 /**
- * NodeBookingApi-owned table in the dedicated auth database (not shared with BookingApi).
- * tenant_id holds the same real BookingApi tenant GUID Contacts are stamped with — see
- * common/constants/tenant.ts — so a logged-in user's tenant context lines up with rows in
- * the other database.
+ * tenant_id holds the same tenant GUID every other row is stamped with — see
+ * common/constants/tenant.ts — so a logged-in user's tenant context matches the rows their
+ * queries can see. Not a foreign key: there is no tenants table.
  *
  * Not tenant-filtered: login has to find the user before any tenant context exists.
  *
@@ -35,7 +34,7 @@ export class User {
   @Property({
     fieldName: 'created_at',
     type: 'datetime',
-    columnType: 'timestamp',
+    columnType: 'timestamptz',
     defaultRaw: 'now()',
   })
   createdAt: Opt<Date> = new Date();
@@ -43,7 +42,7 @@ export class User {
   @Property({
     fieldName: 'updated_at',
     type: 'datetime',
-    columnType: 'timestamp',
+    columnType: 'timestamptz',
     defaultRaw: 'now()',
     onUpdate: () => new Date(),
   })

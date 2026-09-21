@@ -3,7 +3,6 @@ import { InjectRepository } from '@mikro-orm/nestjs';
 import { EntityRepository, raw } from '@mikro-orm/postgresql';
 import type { Contact } from '../contacts/entities/contact.entity';
 import { ContactResponseDto } from '../contacts/dto/contact-response.dto';
-import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
 import { Slot } from '../slots/entities/slot.entity';
 import { SlotStatus } from '../slots/slot-status.enum';
 import { parseTstzRange } from '../slots/tstzrange';
@@ -25,7 +24,7 @@ export class ReportsService {
   private readonly logger = new Logger(ReportsService.name);
 
   constructor(
-    @InjectRepository(Slot, BOOKING_CONTEXT)
+    @InjectRepository(Slot)
     private readonly slots: EntityRepository<Slot>,
   ) {}
 
@@ -43,8 +42,8 @@ export class ReportsService {
         // Duration is a tstzrange; BookingApi's summary counts a slot only when the whole
         // range is inside the window, not merely its start. The callback gets the alias
         // MikroORM gave the Slots table.
-        [raw((alias) => `lower(${alias}."Duration")`)]: { $gte: search.from },
-        [raw((alias) => `upper(${alias}."Duration")`)]: { $lte: search.to },
+        [raw((alias) => `lower(${alias}.duration)`)]: { $gte: search.from },
+        [raw((alias) => `upper(${alias}.duration)`)]: { $lte: search.to },
         status: { $ne: SlotStatus.Cancelled },
       },
       // TENANT_FILTER scopes the slots and, as they're populated, the bookings and

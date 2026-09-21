@@ -5,7 +5,6 @@ import { MikroORM } from '@mikro-orm/postgresql';
 import { DEFAULT_TENANT_ID } from '../common/constants/tenant';
 import { User } from '../users/entities/user.entity';
 import { UserRole } from '../users/user-role.enum';
-import { AUTH_MIGRATIONS } from './migrations/auth';
 import { createOrmOptions } from './mikro-orm.options';
 
 // Runs outside Nest, so it gets no ConfigModule and no direnv guarantee — load .env
@@ -15,9 +14,8 @@ loadDotenv();
 const BCRYPT_ROUNDS = 10;
 
 /**
- * Standalone provisioning script — BookingApi's admin-only account creation has no
- * equivalent here (no admin endpoints), so this is how local/test accounts get into the
- * auth database. Run via `npm run seed:auth-user`.
+ * Standalone provisioning script — there are no registration or admin endpoints, so this
+ * is how accounts get created. Run via `npm run seed:auth-user`.
  */
 async function seed(): Promise<void> {
   const email = process.env.SEED_EMAIL ?? 'admin@nodebooking.local';
@@ -25,11 +23,7 @@ async function seed(): Promise<void> {
   const role = (process.env.SEED_ROLE as UserRole | undefined) ?? UserRole.Administrator;
 
   const orm = await MikroORM.init({
-    ...createOrmOptions({
-      clientUrl: process.env.AUTH_DATABASE_URL,
-      migrationsDir: 'migrations/auth',
-      migrations: AUTH_MIGRATIONS,
-    }),
+    ...createOrmOptions({ clientUrl: process.env.DATABASE_URL }),
     entities: [User],
   });
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { Opt, Ref } from '@mikro-orm/core';
 import {
   Entity,
@@ -13,64 +14,71 @@ import { Pitch } from '../../pitches/entities/pitch.entity';
 import { SlotStatus } from '../slot-status.enum';
 
 /**
- * Maps onto BookingApi's own "Slots" table (shared BookingDb on nunicek-ts), not a table
- * NodeBookingApi owns or migrates — same arrangement as Contact and Booking.
+ * NodeBookingApi-owned table, created by the InitBookingSchema migration.
  *
- * The table carries an exclusion constraint BookingApi added by hand:
- *   EXCLUDE USING gist ("PitchId" WITH =, "Duration" WITH &&) WHERE ("Status" != 3)
- * so two non-cancelled slots on one pitch can never overlap in time. Violating it raises
- * SQLSTATE 23P01 (exclusion_violation), which AllExceptionsFilter currently maps to a
- * generic 500 — it only special-cases unique violations.
- *
- * BookingDb's [Timestamp] uint Version is deliberately absent: EF maps it to Postgres's
- * xmin system column, which isn't mapped here.
+ * That migration also adds an exclusion constraint:
+ *   EXCLUDE USING gist (pitch_id WITH =, duration WITH &&) WHERE (status <> 3)
+ * so two non-cancelled slots can never overlap on one pitch, whatever the application's
+ * own checks do under concurrency. Violating it raises SQLSTATE 23P01
+ * (exclusion_violation), which AllExceptionsFilter currently maps to a generic 500 — it
+ * only special-cases unique violations.
  */
-@Entity({ tableName: 'Slots' })
+@Entity({ tableName: 'slots' })
 @Filter(TENANT_FILTER)
 export class Slot {
-  /** No DB default — BookingApi generates ids app-side, so create() must call randomUUID(). */
-  @PrimaryKey({ fieldName: 'Id', type: 'uuid' })
-  id: string;
+  @PrimaryKey({ fieldName: 'id', type: 'uuid' })
+  id: Opt<string> = randomUUID();
 
-  @Property({ fieldName: 'Name', type: 'text' })
+  @Property({ fieldName: 'name', type: 'text' })
   name: string;
 
   /**
-   * NpgsqlRange<DateTime> on the .NET side. No type is registered for tstzrange, so the
-   * value arrives and leaves as a raw range literal:
+   * No type is registered for tstzrange, so the value arrives and leaves as a raw range
+   * literal:
    *   ["2026-09-14 18:00:00+00","2026-09-14 19:00:00+00")
    * Lower bound inclusive, upper bound exclusive — see slots/tstzrange.ts.
    */
-  @Property({ fieldName: 'Duration', type: 'string', columnType: 'tstzrange' })
+  @Property({ fieldName: 'duration', type: 'string', columnType: 'tstzrange' })
   duration: string;
 
   /**
    * numeric. MikroORM's decimal type keeps it as a string to preserve precision —
    * convert at the DTO boundary, not here.
    */
-  @Property({ fieldName: 'Price', type: 'decimal', columnType: 'numeric' })
+  @Property({ fieldName: 'price', type: 'decimal', columnType: 'numeric' })
   price: string;
 
-  /** ON DELETE CASCADE is inherited DB behaviour. No inverse collection on Pitch. */
-  @ManyToOne(() => Pitch, { fieldName: 'PitchId', ref: true, deleteRule: 'cascade' })
+  /** Deleting a pitch deletes its slots; the cascade is the database's. */
+  @ManyToOne(() => Pitch, { fieldName: 'pitch_id', ref: true, deleteRule: 'cascade' })
   pitch: Ref<Pitch>;
 
-  @ManyToOne(() => Booking, { fieldName: 'BookingId', ref: true, deleteRule: 'cascade' })
+  @ManyToOne(() => Booking, { fieldName: 'booking_id', ref: true, deleteRule: 'cascade' })
   booking: Ref<Booking>;
 
-  /** Plain integer column, not a Postgres enum type. Defaults to Booked on the .NET side. */
-  @Enum({ fieldName: 'Status', items: () => SlotStatus, type: 'integer' })
+  /** Plain integer column, not a Postgres enum type — the exclusion constraint reads it. */
+  @Enum({ fieldName: 'status', items: () => SlotStatus, type: 'integer' })
   status: SlotStatus;
 
-  /** The one genuinely nullable column on this table. */
-  @Property({ fieldName: 'CancellationReason', type: 'text', nullable: true })
+  @Property({ fieldName: 'cancellation_reason', type: 'text', nullable: true })
   cancellationReason: string | null = null;
 
-  /**
-   * BookingApi is multi-tenant; NodeBookingApi only ever operates against one real
-   * tenant (see common/constants/tenant.ts). Filled on insert by onCreate and filtered on
-   * read by TENANT_FILTER, both sourced from the request's JWT.
-   */
-  @Property({ fieldName: 'TenantId', type: 'uuid', onCreate: currentTenantOnCreate })
+  @Property({ fieldName: 'tenant_id', type: 'uuid', onCreate: currentTenantOnCreate })
   tenantId: Opt<string>;
+
+  @Property({
+    fieldName: 'created_at',
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+  })
+  createdAt: Opt<Date> = new Date();
+
+  @Property({
+    fieldName: 'updated_at',
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+    onUpdate: () => new Date(),
+  })
+  updatedAt: Opt<Date> = new Date();
 }

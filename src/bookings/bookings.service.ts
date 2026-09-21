@@ -1,12 +1,10 @@
-import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PopulateHint } from '@mikro-orm/core';
-import { InjectEntityManager, InjectRepository } from '@mikro-orm/nestjs';
+import { InjectRepository } from '@mikro-orm/nestjs';
 import { EntityManager, EntityRepository, raw } from '@mikro-orm/postgresql';
 import { DateTime } from 'luxon';
 import { getCurrentTenantId } from '../common/tenancy/tenant-context';
 import { ContactsService } from '../contacts/contacts.service';
-import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
 import { FieldsService } from '../fields/fields.service';
 import { Pitch } from '../pitches/entities/pitch.entity';
 import { Slot } from '../slots/entities/slot.entity';
@@ -37,9 +35,8 @@ export class BookingsService {
   private readonly logger = new Logger(BookingsService.name);
 
   constructor(
-    @InjectRepository(Booking, BOOKING_CONTEXT)
+    @InjectRepository(Booking)
     private readonly bookings: EntityRepository<Booking>,
-    @InjectEntityManager(BOOKING_CONTEXT)
     private readonly em: EntityManager,
     private readonly contactsService: ContactsService,
     private readonly fieldsService: FieldsService,
@@ -60,7 +57,7 @@ export class BookingsService {
         slots: {
           // Duration is a tstzrange; its lower bound is the slot's start. The callback gets
           // the alias MikroORM gave the joined Slots table.
-          [raw((alias) => `lower(${alias}."Duration")`)]: { $gte: search.from, $lte: search.to },
+          [raw((alias) => `lower(${alias}.duration)`)]: { $gte: search.from, $lte: search.to },
           // Optional conditions are spread in only when they apply, so an absent filter
           // adds nothing to the WHERE clause.
           ...(search.includeCancelled ? {} : { status: { $ne: SlotStatus.Cancelled } }),
@@ -96,12 +93,10 @@ export class BookingsService {
     // slots — in a single transaction, so a failed slot insert can't leave an empty
     // booking behind. tenantId is filled on every row by the entities' onCreate hook.
     const booking = this.bookings.create({
-      id: randomUUID(),
       name: dto.name,
       contact: dto.contactId, // a primary key is enough for a relation
       slots: allocations.map(({ pitchId, from, to }) => ({
-        id: randomUUID(),
-        name: dto.name, // BookingApi: slot names mirror the booking name
+        name: dto.name, // slot names mirror the booking name
         duration: formatTstzRange(from, to),
         price: dto.price.toString(),
         pitch: pitchId,
@@ -162,7 +157,7 @@ export class BookingsService {
         tenantId: getCurrentTenantId(),
         status: { $ne: SlotStatus.Cancelled },
       })
-      .andWhere('slot."Duration" && tstzrange(?, ?)', [
+      .andWhere('slot.duration && tstzrange(?, ?)', [
         sessions[0].from,
         sessions[sessions.length - 1].to,
       ])

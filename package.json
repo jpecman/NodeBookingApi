@@ -15,13 +15,11 @@
     "test": "NODE_OPTIONS='--experimental-vm-modules --disable-warning=ExperimentalWarning' jest",
     "security": "./scripts/security-check.sh",
     "openapi:generate": "ts-node src/generate-openapi.ts",
-    "migration:generate": "ts-node src/database/migrate.ts booking create",
-    "migration:run": "ts-node src/database/migrate.ts booking up",
-    "migration:revert": "ts-node src/database/migrate.ts booking down",
-    "migration:generate:auth": "ts-node src/database/migrate.ts auth create",
-    "migration:run:auth": "ts-node src/database/migrate.ts auth up",
-    "migration:revert:auth": "ts-node src/database/migrate.ts auth down",
-    "seed:auth-user": "ts-node src/database/seed-auth-user.ts"
+    "migration:generate": "ts-node src/database/migrate.ts create",
+    "migration:run": "ts-node src/database/migrate.ts up",
+    "migration:revert": "ts-node src/database/migrate.ts down",
+    "seed:auth-user": "ts-node src/database/seed-auth-user.ts",
+    "seed:booking": "ts-node src/database/seed-booking.ts"
   },
   "jest": {
     "preset": "ts-jest",

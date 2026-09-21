@@ -10,7 +10,7 @@ import { createSwaggerDocument } from './swagger';
  * `npm run openapi:generate [outfile]` (defaults to ./openapi.json).
  *
  * The app is still constructed, so both MikroORM contexts connect during
- * module init — `DATABASE_URL` and `AUTH_DATABASE_URL` have to be reachable even
+ * module init — `DATABASE_URL` has to be reachable even
  * though nothing is queried.
  */
 async function generate(): Promise<void> {

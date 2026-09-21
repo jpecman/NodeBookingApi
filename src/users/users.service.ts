@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectEntityManager, InjectRepository } from '@mikro-orm/nestjs';
+import { InjectRepository } from '@mikro-orm/nestjs';
 import { EntityManager, EntityRepository } from '@mikro-orm/postgresql';
-import { AUTH_CONTEXT } from '../database/mikro-orm.options';
 import { User } from './entities/user.entity';
 import { UserRole } from './user-role.enum';
 
@@ -15,9 +14,8 @@ export interface CreateUserInput {
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectRepository(User, AUTH_CONTEXT)
+    @InjectRepository(User)
     private readonly users: EntityRepository<User>,
-    @InjectEntityManager(AUTH_CONTEXT)
     private readonly em: EntityManager,
   ) {}
 

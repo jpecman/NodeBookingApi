@@ -1,8 +1,6 @@
-import { randomUUID } from 'crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectEntityManager, InjectRepository } from '@mikro-orm/nestjs';
+import { InjectRepository } from '@mikro-orm/nestjs';
 import { EntityManager, EntityRepository } from '@mikro-orm/postgresql';
-import { BOOKING_CONTEXT } from '../database/mikro-orm.options';
 import { CreateFieldDto } from './dto/create-field.dto';
 import { UpdateFieldDto } from './dto/update-field.dto';
 import { Field } from './entities/field.entity';
@@ -12,20 +10,18 @@ export class FieldsService {
   private readonly logger = new Logger(FieldsService.name);
 
   constructor(
-    @InjectRepository(Field, BOOKING_CONTEXT)
+    @InjectRepository(Field)
     private readonly fields: EntityRepository<Field>,
-    @InjectEntityManager(BOOKING_CONTEXT)
     private readonly em: EntityManager,
   ) {}
 
   async create(dto: CreateFieldDto): Promise<Field> {
     // Pitches given inline become entities too, and the default persist cascade means
     // one flush inserts the field and its pitches together, in a single transaction.
-    // Neither table has an id default — BookingApi generates ids app-side.
+    // Ids come from the entities' initializers.
     const field = this.fields.create({
-      id: randomUUID(),
       name: dto.name,
-      pitches: dto.pitches.map((name) => ({ id: randomUUID(), name })),
+      pitches: dto.pitches.map((name) => ({ name })),
     });
 
     await this.em.flush();
