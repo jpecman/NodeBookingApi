@@ -150,7 +150,9 @@ export class BookingsService {
   private async findOccupied(fieldId: string, sessions: Period[]): Promise<Allocation[]> {
     const slots = await this.em
       .createQueryBuilder(Slot, 'slot')
-      .select(['pitch', 'duration'])
+      // The primary key has to be in the projection: getResultList() maps rows onto Slot
+      // entities, and MikroORM refuses to materialise one without its identifier.
+      .select(['id', 'pitch', 'duration'])
       .where({
         pitch: { field: fieldId }, // joins Pitch automatically
         // QueryBuilder doesn't apply TENANT_FILTER, so scope it explicitly.

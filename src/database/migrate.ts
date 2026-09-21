@@ -1,12 +1,7 @@
 import 'reflect-metadata';
 import { config as loadDotenv } from 'dotenv';
 import { MikroORM } from '@mikro-orm/postgresql';
-import { Booking } from '../bookings/entities/bookings.entity';
-import { Contact } from '../contacts/entities/contact.entity';
-import { Field } from '../fields/entities/field.entity';
-import { Pitch } from '../pitches/entities/pitch.entity';
-import { Slot } from '../slots/entities/slot.entity';
-import { User } from '../users/entities/user.entity';
+import { ENTITIES } from './entities';
 import { createOrmOptions } from './mikro-orm.options';
 
 // Runs outside Nest, so it gets no ConfigModule and no direnv guarantee — load .env
@@ -37,7 +32,7 @@ async function migrate(): Promise<void> {
   // Entities are listed explicitly: there is no Nest module here to autoload them from.
   const orm = await MikroORM.init({
     ...createOrmOptions({ clientUrl: process.env.DATABASE_URL }),
-    entities: [User, Contact, Field, Pitch, Booking, Slot],
+    entities: ENTITIES,
   });
 
   try {
