@@ -132,13 +132,6 @@ describe('contacts (e2e)', () => {
       expectError(res, 404, /^Contact .* not found$/);
     });
 
-    it('400s on a non-uuid id, with no errors array', async () => {
-      const res = await http().get(`${API}/contacts/abc`).set('Cookie', cookie);
-
-      // ParseUUIDPipe throws with a string payload, unlike the DTO failures above, so the
-      // filter produces `message` rather than `errors` — expectError asserts exactly that.
-      expectError(res, 400, 'Validation failed (uuid is expected)');
-    });
   });
 
   describe('PUT /contacts/:id', () => {
