@@ -8,6 +8,12 @@ export interface AppConfiguration {
     secret: string;
     expiresIn: string;
   };
+  rateLimit: {
+    login: {
+      limit: number;
+      ttlMs: number;
+    };
+  };
 }
 
 /**
@@ -23,5 +29,12 @@ export default (): AppConfiguration => ({
   jwt: {
     secret: process.env.JWT_SECRET as string,
     expiresIn: process.env.JWT_EXPIRES_IN ?? '8h',
+  },
+  rateLimit: {
+    login: {
+      limit: parseInt(process.env.LOGIN_RATE_LIMIT ?? '5', 10),
+      // Milliseconds: @nestjs/throttler takes `ttl` in ms since v5.
+      ttlMs: parseInt(process.env.LOGIN_RATE_TTL ?? '60000', 10),
+    },
   },
 });

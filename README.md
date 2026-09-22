@@ -38,3 +38,8 @@ npm run test:all  # both
 ```
 
 See [test/README.md](test/README.md) for details.
+
+## Design notes
+
+[docs/design-notes.md](docs/design-notes.md) explains why the less obvious parts work the way
+they do.

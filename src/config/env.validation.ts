@@ -32,6 +32,16 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   JWT_EXPIRES_IN: string = '8h';
+
+  /** Login attempts allowed per LOGIN_RATE_TTL, per client IP and submitted email. */
+  @IsInt()
+  @Min(1)
+  LOGIN_RATE_LIMIT: number = 5;
+
+  /** The window LOGIN_RATE_LIMIT applies over, in milliseconds. */
+  @IsInt()
+  @Min(1000)
+  LOGIN_RATE_TTL: number = 60000;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

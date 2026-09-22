@@ -17,3 +17,6 @@ process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = handshake.databaseUrl;
 process.env.JWT_SECRET = handshake.jwtSecret;
 process.env.JWT_EXPIRES_IN = '8h';
+// Pinned for the same reason: auth-rate-limit.e2e-spec.ts counts attempts.
+process.env.LOGIN_RATE_LIMIT = '5';
+process.env.LOGIN_RATE_TTL = '60000';

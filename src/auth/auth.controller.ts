@@ -1,6 +1,13 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import {
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiTooManyRequestsResponse,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { AuthService } from './auth.service';
@@ -23,10 +30,13 @@ export class AuthController {
   ) {}
 
   @Public()
+  // Policy in AuthModule; see docs/design-notes.md.
+  @UseGuards(ThrottlerGuard)
   @Post('login')
   @ApiOperation({ summary: 'Log in, receiving the session as an httpOnly cookie' })
   @ApiOkResponse({ type: UserMeResponseDto })
   @ApiUnauthorizedResponse({ type: ErrorResponseDto })
+  @ApiTooManyRequestsResponse({ type: ErrorResponseDto })
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,

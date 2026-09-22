@@ -7,6 +7,7 @@ import { createTestApp, type TestContext } from './support/create-test-app';
 import { deleteUsersExcept } from './support/db';
 import { expectError, expectValidationError } from './support/expect';
 import { createUser } from './support/fixtures';
+import { resetRateLimit } from './support/throttle';
 
 const EMAIL = 'auth-spec@nodebooking.local';
 const PASSWORD = 'AuthSpecPassword1!';
@@ -24,6 +25,8 @@ describe('auth (e2e)', () => {
   // This spec owns its user because change-password mutates it. The shared admin that
   // globalSetup provisioned is left alone.
   beforeEach(async () => {
+    // This file logs in as EMAIL far more than login's five-per-minute budget allows.
+    resetRateLimit(ctx.app);
     await deleteUsersExcept(ctx.orm, ADMIN_EMAIL);
     await createUser(ctx.orm, { email: EMAIL, password: PASSWORD });
   });

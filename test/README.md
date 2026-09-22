@@ -79,6 +79,7 @@ TEST_DATABASE_URL=postgres://booking:booking@localhost:5433/nodebooking npm run 
 | `support/setup-env.ts` | runs in each worker **before** the spec's imports, and overrides `DATABASE_URL`/`JWT_SECRET` |
 | `support/create-test-app.ts` | boots `AppModule` and applies `configureApp()` |
 | `support/db.ts` | `TRUNCATE`s the domain tables between tests; `users` is preserved |
+| `support/throttle.ts` | clears the login rate limiter between tests |
 | `support/fixtures.ts` | rows written directly, inside `tenantContext.run(...)` |
 
 Two things are load-bearing and easy to break:
@@ -89,6 +90,13 @@ Two things are load-bearing and easy to break:
 - **`test:e2e` runs `--runInBand`.** One shared database plus `TRUNCATE` means parallel
   workers would wipe each other's fixtures. `maxWorkers` inside a Jest `projects` entry is
   silently ignored, so the flag has to stay on the script.
+- **`POST /auth/login` allows five attempts a minute** per (IP, email), so any spec that logs
+  in more often than that must call `resetRateLimit(ctx.app)` in `beforeEach` — `auth.e2e-spec.ts`
+  does. The others log in once in `beforeAll` and don't care. `setup-env.ts` pins
+  `LOGIN_RATE_LIMIT`/`LOGIN_RATE_TTL` for the same reason it pins `DATABASE_URL`: a direnv
+  shell has already exported whatever the developer put in `.env`, and
+  `auth-rate-limit.e2e-spec.ts` counts attempts. The policy itself is explained in
+  [../docs/design-notes.md](../docs/design-notes.md).
 
 Every spec must `afterAll(() => ctx.close())`, or the connection pool leaks and Jest hangs.
 
