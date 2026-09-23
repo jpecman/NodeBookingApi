@@ -49,8 +49,9 @@ export const ApiCreateBooking = () =>
     ApiCreatedResponse({ type: BookingResponseDto }),
     ApiBadRequestResponse({
       description:
-        'Validation failed, the series ends before it starts or is too long, the start time ' +
-        "doesn't exist on a DST-change day, or the field has no pitches",
+        'Validation failed, the first session starts in the past, a session falls outside ' +
+        'opening hours (08:00–22:00 Europe/Prague), the series ends before it starts or is ' +
+        "too long, the start time doesn't exist on a DST-change day, or the field has no pitches",
       type: ErrorResponseDto,
     }),
     ApiNotFoundResponse({ description: 'Contact or field not found', type: ErrorResponseDto }),

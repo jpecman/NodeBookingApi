@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@mikro-orm/nestjs';
 import { EntityManager } from '@mikro-orm/postgresql';
+import { autumnDstChange, iso, upcomingMonday } from '../../test/support/dates';
 import { DEFAULT_TENANT_ID } from '../common/constants/tenant';
 import { tenantContext } from '../common/tenancy/tenant-context';
 import { ContactsService } from '../contacts/contacts.service';
@@ -20,9 +21,8 @@ import { Booking } from './entities/bookings.entity';
  * recurrence and allocation rules are pure functions of the DTO, the field's pitches and
  * the slots already on it.
  *
- * Times are written as UTC instants with the Prague local time noted, because the
- * recurrence is calendar arithmetic in Europe/Prague (VENUE_ZONE) and the DST cases are
- * the point of several tests.
+ * Times are Europe/Prague (VENUE_ZONE) wall-clock times relative to today, because the
+ * recurrence is calendar arithmetic in that zone and a start in the past is rejected.
  */
 
 const CONTACT_ID = '11111111-1111-4111-8111-111111111111';
@@ -35,11 +35,19 @@ const PITCH_B = { id: 'bbbbbbbb-0000-4000-8000-000000000000', name: 'B' } as Pit
 const fieldWith = (...pitches: Pitch[]) =>
   ({ id: FIELD_ID, pitches: { getItems: () => pitches } }) as Field;
 
+/** The default first session: 20:00 Prague, a week or two out. */
+const START = upcomingMonday(20);
+
+/** START shifted by whole minutes, as a Date. */
+const at = (minutes: number) => START.plus({ minutes }).toJSDate();
+
 /** A row as findOccupied's QueryBuilder returns it: an unloaded pitch ref and a raw range. */
-const occupied = (pitch: Pitch, from: string, to: string) => ({
+const occupied = (pitch: Pitch, fromMinutes: number, toMinutes: number) => ({
   pitch: { id: pitch.id },
-  duration: formatTstzRange(new Date(from), new Date(to)),
+  duration: formatTstzRange(at(fromMinutes), at(toMinutes)),
 });
+
+const weeksAfterStart = (weeks: number) => START.plus({ weeks }).toJSDate();
 
 /** The shape create() passes to repository.create(), which is what these tests assert on. */
 interface CreatedSlot {
@@ -70,8 +78,7 @@ describe('BookingsService', () => {
 
   const dtoFor = (overrides: Partial<CreateBookingDto> = {}): CreateBookingDto => ({
     name: 'Weekly training',
-    // 20:00 Prague (CEST, UTC+2).
-    from: new Date('2026-09-21T18:00:00Z'),
+    from: START.toJSDate(),
     duration: BookingDuration.OneAndHalfHour,
     price: 1200,
     isWholeField: false,
@@ -117,10 +124,7 @@ describe('BookingsService', () => {
 
       const slots = createdSlots();
       expect(slots).toHaveLength(1);
-      expect(parseTstzRange(slots[0].duration)).toEqual({
-        from: new Date('2026-09-21T18:00:00Z'),
-        to: new Date('2026-09-21T19:30:00Z'),
-      });
+      expect(parseTstzRange(slots[0].duration)).toEqual({ from: at(0), to: at(90) });
       expect(slots[0]).toMatchObject({
         name: 'Weekly training',
         price: '1200',
@@ -130,68 +134,75 @@ describe('BookingsService', () => {
     });
 
     it('creates one session per week up to endDate', async () => {
-      await withTenant(() =>
-        service.create(dtoFor({ endDate: new Date('2026-10-12T18:00:00Z') })),
-      );
+      await withTenant(() => service.create(dtoFor({ endDate: weeksAfterStart(3) })));
 
       const starts = createdSlots().map((slot) => parseTstzRange(slot.duration).from.toISOString());
-      expect(starts).toEqual([
-        '2026-09-21T18:00:00.000Z',
-        '2026-09-28T18:00:00.000Z',
-        '2026-10-05T18:00:00.000Z',
-        '2026-10-12T18:00:00.000Z',
-      ]);
+      expect(starts).toEqual([0, 1, 2, 3].map((weeks) => iso(START.plus({ weeks }))));
     });
 
     it('keeps the local start time across the autumn DST change', async () => {
-      // 18:00 Prague on 18 Oct is CEST (UTC+2); on 25 Oct the clocks have gone back, so
-      // the same local time is CET (UTC+1) — an hour later in UTC.
+      // 18:00 Prague is CEST (UTC+2) the Sunday before and CET (UTC+1) on the change day —
+      // the same local time an hour later in UTC.
+      const change = autumnDstChange(18);
       await withTenant(() =>
         service.create(
-          dtoFor({
-            from: new Date('2026-10-18T16:00:00Z'),
-            endDate: new Date('2026-10-25T16:00:00Z'),
-          }),
+          dtoFor({ from: change.minus({ weeks: 1 }).toJSDate(), endDate: change.toJSDate() }),
         ),
       );
 
-      const starts = createdSlots().map((slot) => parseTstzRange(slot.duration).from.toISOString());
-      expect(starts).toEqual(['2026-10-18T16:00:00.000Z', '2026-10-25T17:00:00.000Z']);
+      const [first, second] = createdSlots().map((slot) => parseTstzRange(slot.duration).from);
+      expect(second.getTime() - first.getTime()).toBe((7 * 24 + 1) * 60 * 60 * 1000);
     });
 
-    it('rejects a start time that does not exist on the spring DST change day', async () => {
-      // 02:30 Prague on 22 Mar exists; a week later the clocks jump 02:00 -> 03:00.
-      await expect(
-        withTenant(() =>
-          service.create(
-            dtoFor({
-              from: new Date('2026-03-22T01:30:00Z'),
-              endDate: new Date('2026-03-29T01:30:00Z'),
-            }),
-          ),
-        ),
-      ).rejects.toThrow(BadRequestException);
-    });
+    // The nonexistent-local-time check isn't covered: clocks only jump between 02:00 and
+    // 03:00, outside opening hours, so the hours check rejects such a start first.
 
     it('rejects a series that ends before it starts', async () => {
       await expect(
-        withTenant(() => service.create(dtoFor({ endDate: new Date('2026-09-14T18:00:00Z') }))),
+        withTenant(() => service.create(dtoFor({ endDate: weeksAfterStart(-1) }))),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('allows exactly 52 sessions', async () => {
       // 51 weeks after the first session, so the first plus 51 more.
-      await withTenant(() =>
-        service.create(dtoFor({ endDate: new Date('2027-09-13T18:00:00Z') })),
-      );
+      await withTenant(() => service.create(dtoFor({ endDate: weeksAfterStart(51) })));
 
       expect(createdSlots()).toHaveLength(52);
     });
 
     it('rejects a series longer than 52 sessions', async () => {
       await expect(
-        withTenant(() => service.create(dtoFor({ endDate: new Date('2027-09-20T18:00:00Z') }))),
+        withTenant(() => service.create(dtoFor({ endDate: weeksAfterStart(52) }))),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('time rules', () => {
+    const create = (from: Date, duration = BookingDuration.OneAndHalfHour) =>
+      withTenant(() => service.create(dtoFor({ from, duration })));
+
+    it('rejects a first session in the past', async () => {
+      await expect(create(weeksAfterStart(-3))).rejects.toThrow(
+        new BadRequestException('A booking cannot start in the past'),
+      );
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a session starting at 08:00 and one ending at 22:00', async () => {
+      await create(START.set({ hour: 8 }).toJSDate());
+      await create(START.set({ hour: 20 }).toJSDate(), BookingDuration.TwoHours);
+
+      expect(repository.create).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      ['starts before 08:00', 7, 59, BookingDuration.OneHour],
+      ['ends after 22:00', 21, 0, BookingDuration.OneAndHalfHour],
+      ['runs past midnight', 23, 30, BookingDuration.OneHour],
+    ])('rejects a session that %s', async (_, hour, minute, duration) => {
+      await expect(create(START.set({ hour, minute }).toJSDate(), duration)).rejects.toThrow(
+        new BadRequestException('Sessions must start at 08:00 or later and end by 22:00'),
+      );
     });
   });
 
@@ -199,7 +210,7 @@ describe('BookingsService', () => {
     it('books every pitch for each session', async () => {
       await withTenant(() =>
         service.create(
-          dtoFor({ isWholeField: true, endDate: new Date('2026-09-28T18:00:00Z') }),
+          dtoFor({ isWholeField: true, endDate: weeksAfterStart(1) }),
         ),
       );
 
@@ -215,7 +226,7 @@ describe('BookingsService', () => {
 
     it('rejects when an existing slot overlaps, even on one pitch only', async () => {
       queryBuilder.getResultList.mockResolvedValue([
-        occupied(PITCH_A, '2026-09-21T19:00:00Z', '2026-09-21T20:00:00Z'),
+        occupied(PITCH_A, 60, 120),
       ]);
 
       await expect(
@@ -227,9 +238,7 @@ describe('BookingsService', () => {
 
   describe('half-field allocation', () => {
     it('picks the free pitch when another booking shares the exact period', async () => {
-      queryBuilder.getResultList.mockResolvedValue([
-        occupied(PITCH_A, '2026-09-21T18:00:00Z', '2026-09-21T19:30:00Z'),
-      ]);
+      queryBuilder.getResultList.mockResolvedValue([occupied(PITCH_A, 0, 90)]);
 
       await withTenant(() => service.create(dtoFor()));
 
@@ -238,7 +247,7 @@ describe('BookingsService', () => {
 
     it('rejects sharing the field over a different period', async () => {
       queryBuilder.getResultList.mockResolvedValue([
-        occupied(PITCH_A, '2026-09-21T18:30:00Z', '2026-09-21T19:00:00Z'),
+        occupied(PITCH_A, 30, 60),
       ]);
 
       await expect(withTenant(() => service.create(dtoFor()))).rejects.toThrow(ConflictException);
@@ -246,17 +255,15 @@ describe('BookingsService', () => {
 
     it('rejects when every pitch is taken for that period', async () => {
       queryBuilder.getResultList.mockResolvedValue([
-        occupied(PITCH_A, '2026-09-21T18:00:00Z', '2026-09-21T19:30:00Z'),
-        occupied(PITCH_B, '2026-09-21T18:00:00Z', '2026-09-21T19:30:00Z'),
+        occupied(PITCH_A, 0, 90),
+        occupied(PITCH_B, 0, 90),
       ]);
 
       await expect(withTenant(() => service.create(dtoFor()))).rejects.toThrow(ConflictException);
     });
 
     it('reuses the first pitch for sessions that do not overlap each other', async () => {
-      await withTenant(() =>
-        service.create(dtoFor({ endDate: new Date('2026-09-28T18:00:00Z') })),
-      );
+      await withTenant(() => service.create(dtoFor({ endDate: weeksAfterStart(1) })));
 
       // Weekly sessions never overlap, so the allocator's running `taken` list doesn't
       // push the second one onto another pitch.

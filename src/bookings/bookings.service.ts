@@ -16,6 +16,9 @@ import { Booking } from './entities/bookings.entity';
 
 const VENUE_ZONE = 'Europe/Prague'; // BookingApi: appsettings.json → Venue:TimeZone
 const MAX_OCCURRENCES = 52; // BookingApi: WeeklyRecurrence.MaxOccurences
+// Opening hours, venue-local: a session starts at OPENS or later and ends by CLOSES.
+const OPENS = { hour: 8, minute: 0 };
+const CLOSES = { hour: 22, minute: 0 };
 
 interface Period {
   from: Date;
@@ -114,6 +117,20 @@ export class BookingsService {
   /** WeeklyRecurrence.Create + Expand. */
   private expandWeekly(dto: CreateBookingDto): Period[] {
     const first = DateTime.fromJSDate(dto.from, { zone: VENUE_ZONE });
+
+    // Checking the first session covers the series: later weeks start later, at the same
+    // local time and for the same duration (the DST check below rejects any shift).
+    if (first < DateTime.now()) {
+      throw new BadRequestException('A booking cannot start in the past');
+    }
+    const time = { second: 0, millisecond: 0 };
+    if (
+      first < first.set({ ...OPENS, ...time }) ||
+      first.plus({ minutes: dto.duration }) > first.set({ ...CLOSES, ...time })
+    ) {
+      throw new BadRequestException('Sessions must start at 08:00 or later and end by 22:00');
+    }
+
     const firstDay = first.startOf('day');
     const lastDay = DateTime.fromJSDate(dto.endDate ?? dto.from, { zone: VENUE_ZONE }).startOf(
       'day',

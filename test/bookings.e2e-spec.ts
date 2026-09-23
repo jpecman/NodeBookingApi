@@ -6,12 +6,21 @@ import { SlotStatus } from '../src/slots/slot-status.enum';
 import { login, mintCookie, type SessionCookie } from './support/auth';
 import { API, TENANT_A, TENANT_B } from './support/constants';
 import { createTestApp, type TestContext } from './support/create-test-app';
+import { autumnDstChange, iso, upcomingMonday } from './support/dates';
 import { resetDomainTables } from './support/db';
 import { expectError, expectValidationError } from './support/expect';
 import { asTenant, createContact, createField, createRawSlot } from './support/fixtures';
 
-/** A Monday 18:00 Prague (CEST), well clear of any DST boundary. */
-const FROM = '2026-09-21T16:00:00Z';
+/** A Monday 18:00 Prague, a week or two out — the API rejects a start in the past. */
+const START = upcomingMonday(18);
+const FROM = iso(START);
+
+/** START shifted by whole minutes (or weeks), as a Date. */
+const at = (minutes: number) => START.plus({ minutes }).toJSDate();
+const weeksAfterStart = (weeks: number) => iso(START.plus({ weeks }));
+
+/** A search window covering START's whole day. */
+const DAY = { from: iso(START.startOf('day')), to: iso(START.plus({ days: 1 }).startOf('day')) };
 
 describe('bookings (e2e)', () => {
   let ctx: TestContext;
@@ -72,8 +81,8 @@ describe('bookings (e2e)', () => {
           {
             id: expect.any(String),
             name: 'Weekly training',
-            from: '2026-09-21T16:00:00.000Z',
-            to: '2026-09-21T17:30:00.000Z',
+            from: FROM,
+            to: at(90).toISOString(),
             // numeric comes out of pg as a string; the DTO is contracted to a number.
             price: 1200,
             pitchId: pitchA,
@@ -89,15 +98,12 @@ describe('bookings (e2e)', () => {
 
   describe('POST /bookings — weekly expansion', () => {
     it('expands to one session per week', async () => {
-      const res = await post({ endDate: '2026-10-12T16:00:00Z' });
+      const res = await post({ endDate: weeksAfterStart(3) });
 
       expect(res.status).toBe(201);
-      expect(res.body.slots.map((s: { from: string }) => s.from)).toEqual([
-        '2026-09-21T16:00:00.000Z',
-        '2026-09-28T16:00:00.000Z',
-        '2026-10-05T16:00:00.000Z',
-        '2026-10-12T16:00:00.000Z',
-      ]);
+      expect(res.body.slots.map((s: { from: string }) => s.from)).toEqual(
+        [0, 1, 2, 3].map(weeksAfterStart),
+      );
       // A half-field series reuses one pitch across non-overlapping weeks.
       expect(new Set(res.body.slots.map((s: { pitchId: string }) => s.pitchId))).toEqual(
         new Set([pitchA]),
@@ -107,24 +113,23 @@ describe('bookings (e2e)', () => {
     it('keeps the local wall-clock time across the autumn DST change', async () => {
       // 18:00 Prague is 16:00Z under CEST and 17:00Z under CET. Re-run end to end because
       // this exercises the real tstzrange round trip, not just the formatter.
-      const res = await post({ from: '2026-10-18T16:00:00Z', endDate: '2026-10-25T16:00:00Z' });
+      const change = autumnDstChange(18);
+      const res = await post({ from: iso(change.minus({ weeks: 1 })), endDate: iso(change) });
 
       expect(res.status).toBe(201);
-      expect(res.body.slots.map((s: { from: string }) => s.from)).toEqual([
-        '2026-10-18T16:00:00.000Z',
-        '2026-10-25T17:00:00.000Z',
-      ]);
+      const [first, second] = res.body.slots.map((s: { from: string }) => Date.parse(s.from));
+      expect(second - first).toBe((7 * 24 + 1) * 60 * 60 * 1000);
     });
 
     it('rejects a series that ends before it starts', async () => {
-      const res = await post({ endDate: '2026-09-14T16:00:00Z' });
+      const res = await post({ endDate: weeksAfterStart(-1) });
 
       // A service BadRequestException with a string payload — no `errors` array.
       expectError(res, 400, 'The series cannot end before it starts');
     });
 
     it('allows 52 sessions and rejects 53', async () => {
-      const ok = await post({ endDate: '2027-09-13T16:00:00Z' });
+      const ok = await post({ endDate: weeksAfterStart(51) });
       expect(ok.status).toBe(201);
       expect(ok.body.slots).toHaveLength(52);
 
@@ -132,15 +137,42 @@ describe('bookings (e2e)', () => {
       contact = await createContact(ctx.orm, { email: 'booker@example.com' });
       field = await createField(ctx.orm, 'North Field', ['A', 'B']);
 
-      const tooMany = await post({ endDate: '2027-09-20T16:00:00Z' });
+      const tooMany = await post({ endDate: weeksAfterStart(52) });
       expectError(tooMany, 400, 'A series may not exceed 52 sessions (requested: 53)');
     });
 
     // Not covered: expandWeekly() also rejects a local time that doesn't exist on a
-    // spring-forward day. Reaching it means booking between 02:00 and 03:00, and the venue
-    // is meant to take bookings from 08:00 to 22:00 only — a rule nothing enforces yet
-    // (neither CreateBookingDto nor the service checks the hour). Once it exists, that
-    // branch becomes unreachable, so testing it would pin an input the domain forbids.
+    // spring-forward day. Reaching it means booking between 02:00 and 03:00, outside the
+    // 08:00–22:00 opening hours, so the hours check rejects such a start first.
+  });
+
+  describe('POST /bookings — time rules', () => {
+    const OUTSIDE_HOURS = 'Sessions must start at 08:00 or later and end by 22:00';
+    const localTime = (hour: number, minute = 0) => iso(START.set({ hour, minute }));
+
+    it('rejects a first session in the past', async () => {
+      expectError(
+        await post({ from: weeksAfterStart(-3) }),
+        400,
+        'A booking cannot start in the past',
+      );
+    });
+
+    it('accepts a session starting at 08:00', async () => {
+      expect((await post({ from: localTime(8), duration: 60 })).status).toBe(201);
+    });
+
+    it('accepts a session ending at 22:00', async () => {
+      expect((await post({ from: localTime(20), duration: 120 })).status).toBe(201);
+    });
+
+    it('rejects a session starting before 08:00', async () => {
+      expectError(await post({ from: localTime(7, 59), duration: 60 }), 400, OUTSIDE_HOURS);
+    });
+
+    it('rejects a session ending after 22:00', async () => {
+      expectError(await post({ from: localTime(21), duration: 90 }), 400, OUTSIDE_HOURS);
+    });
   });
 
   describe('POST /bookings — allocation', () => {
@@ -157,8 +189,8 @@ describe('bookings (e2e)', () => {
     it('falls through to the free pitch when one is taken for the same period', async () => {
       await createRawSlot(ctx.orm, {
         pitchId: pitchA,
-        from: new Date('2026-09-21T16:00:00Z'),
-        to: new Date('2026-09-21T17:30:00Z'),
+        from: at(0),
+        to: at(90),
       });
 
       const res = await post();
@@ -171,19 +203,19 @@ describe('bookings (e2e)', () => {
       for (const pitchId of [pitchA, pitchB]) {
         await createRawSlot(ctx.orm, {
           pitchId,
-          from: new Date('2026-09-21T16:00:00Z'),
-          to: new Date('2026-09-21T17:30:00Z'),
+          from: at(0),
+          to: at(90),
         });
       }
 
-      expectError(await post(), 409, /^No pitch is available at 2026-09-21T16:00:00\.000Z$/);
+      expectError(await post(), 409, `No pitch is available at ${FROM}`);
     });
 
     it('409s when an overlapping booking has a different period', async () => {
       await createRawSlot(ctx.orm, {
         pitchId: pitchA,
-        from: new Date('2026-09-21T16:30:00Z'),
-        to: new Date('2026-09-21T18:00:00Z'),
+        from: at(30),
+        to: at(120),
       });
 
       expectError(await post(), 409, /must start and end at the same time/);
@@ -192,22 +224,18 @@ describe('bookings (e2e)', () => {
     it('409s a whole-field booking when any pitch is occupied', async () => {
       await createRawSlot(ctx.orm, {
         pitchId: pitchA,
-        from: new Date('2026-09-21T16:00:00Z'),
-        to: new Date('2026-09-21T17:30:00Z'),
+        from: at(0),
+        to: at(90),
       });
 
-      expectError(
-        await post({ isWholeField: true }),
-        409,
-        /^The field is not free at 2026-09-21T16:00:00\.000Z$/,
-      );
+      expectError(await post({ isWholeField: true }), 409, `The field is not free at ${FROM}`);
     });
 
     it('ignores cancelled slots when allocating', async () => {
       await createRawSlot(ctx.orm, {
         pitchId: pitchA,
-        from: new Date('2026-09-21T16:00:00Z'),
-        to: new Date('2026-09-21T17:30:00Z'),
+        from: at(0),
+        to: at(90),
         status: SlotStatus.Cancelled,
       });
 
@@ -283,8 +311,8 @@ describe('bookings (e2e)', () => {
       await createRawSlot(ctx.orm, {
         tenantId: TENANT_B,
         pitchId: onlyPitch.id,
-        from: new Date('2026-09-21T16:00:00Z'),
-        to: new Date('2026-09-21T17:30:00Z'),
+        from: at(0),
+        to: at(90),
       });
 
       // AllExceptionsFilter special-cases 23505 only, so 23P01 falls through to the 500.
@@ -299,7 +327,7 @@ describe('bookings (e2e)', () => {
     it('finds a booking whose slot starts inside the window', async () => {
       await post().expect(201);
 
-      const res = await search({ from: '2026-09-21T00:00:00Z', to: '2026-09-22T00:00:00Z' });
+      const res = await search(DAY);
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
@@ -307,11 +335,11 @@ describe('bookings (e2e)', () => {
     });
 
     it('returns every slot of a matching booking, not just the ones in the window', async () => {
-      await post({ endDate: '2026-10-05T16:00:00Z' }).expect(201);
+      await post({ endDate: weeksAfterStart(2) }).expect(201);
 
       // A window covering only week 1 — populateWhere: PopulateHint.ALL means the booking
       // still comes back with all three slots.
-      const res = await search({ from: '2026-09-21T00:00:00Z', to: '2026-09-22T00:00:00Z' });
+      const res = await search(DAY);
 
       expect(res.body).toHaveLength(1);
       expect(res.body[0].slots).toHaveLength(3);
@@ -321,10 +349,8 @@ describe('bookings (e2e)', () => {
       const other = await createContact(ctx.orm, { email: 'other@example.com' });
       await post().expect(201);
 
-      const window = { from: '2026-09-21T00:00:00Z', to: '2026-09-22T00:00:00Z' };
-
-      expect((await search({ ...window, contactId: other.id })).body).toEqual([]);
-      expect((await search({ ...window, contactId: contact.id })).body).toHaveLength(1);
+      expect((await search({ ...DAY, contactId: other.id })).body).toEqual([]);
+      expect((await search({ ...DAY, contactId: contact.id })).body).toHaveLength(1);
     });
 
     it('excludes cancelled slots unless asked, coercing the string flag', async () => {
@@ -337,21 +363,19 @@ describe('bookings (e2e)', () => {
         await em.flush();
       });
 
-      const window = { from: '2026-09-21T00:00:00Z', to: '2026-09-22T00:00:00Z' };
-
-      expect((await search(window)).body).toEqual([]);
+      expect((await search(DAY)).body).toEqual([]);
       // Query strings are always strings; the DTO's @Transform turns 'true' into true.
-      expect((await search({ ...window, includeCancelled: 'true' })).body).toHaveLength(1);
+      expect((await search({ ...DAY, includeCancelled: 'true' })).body).toHaveLength(1);
     });
 
     it('treats the window bounds as inclusive on the slot start', async () => {
       await post().expect(201);
 
       // from == the slot's exact start ($gte).
-      expect((await search({ from: FROM, to: '2026-09-22T00:00:00Z' })).body).toHaveLength(1);
+      expect((await search({ from: FROM, to: DAY.to })).body).toHaveLength(1);
       // to one millisecond before the start excludes it.
       expect(
-        (await search({ from: '2026-09-21T00:00:00Z', to: '2026-09-21T15:59:59.999Z' })).body,
+        (await search({ from: DAY.from, to: iso(START.minus({ milliseconds: 1 })) })).body,
       ).toEqual([]);
     });
 
@@ -378,7 +402,7 @@ describe('bookings (e2e)', () => {
 
       const res = await http()
         .get(`${API}/bookings`)
-        .query({ from: '2026-09-21T00:00:00Z', to: '2026-09-22T00:00:00Z' })
+        .query(DAY)
         .set('Cookie', mintCookie(ctx.app, { tenantId: TENANT_B }))
         .expect(200);
 

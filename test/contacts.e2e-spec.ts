@@ -6,6 +6,7 @@ import { Slot } from '../src/slots/entities/slot.entity';
 import { login, mintCookie, type SessionCookie } from './support/auth';
 import { API, TENANT_A, TENANT_B } from './support/constants';
 import { createTestApp, type TestContext } from './support/create-test-app';
+import { iso, upcomingMonday } from './support/dates';
 import { resetDomainTables } from './support/db';
 import { expectError, expectValidationError } from './support/expect';
 import { asTenant, createContact, createField } from './support/fixtures';
@@ -225,13 +226,14 @@ describe('contacts (e2e)', () => {
       const contact = await createContact(ctx.orm, { email: 'cascade@example.com' });
       const field = await createField(ctx.orm, 'Cascade Field', ['A', 'B']);
 
+      const start = upcomingMonday(20);
       await http()
         .post(`${API}/bookings`)
         .set('Cookie', cookie)
         .send({
           name: 'Weekly training',
-          from: '2026-09-21T18:00:00Z',
-          endDate: '2026-10-05T18:00:00Z',
+          from: iso(start),
+          endDate: iso(start.plus({ weeks: 2 })),
           duration: 90,
           price: 1200,
           isWholeField: false,

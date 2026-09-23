@@ -7,8 +7,13 @@ import { Slot } from '../src/slots/entities/slot.entity';
 import { login, mintCookie, type SessionCookie } from './support/auth';
 import { API, TENANT_A, TENANT_B } from './support/constants';
 import { createTestApp, type TestContext } from './support/create-test-app';
+import { iso, upcomingMonday } from './support/dates';
 import { resetDomainTables } from './support/db';
 import { asTenant, createContact, createField } from './support/fixtures';
+
+/** 18:00 Prague, a week or two out — the API rejects a start in the past. */
+const START = upcomingMonday(18);
+const FROM = iso(START);
 
 /**
  * The isolation mechanism itself, rather than per-resource visibility (which each
@@ -74,7 +79,7 @@ describe('tenancy (e2e)', () => {
       .set('Cookie', cookieB)
       .send({
         name: 'Weekly training',
-        from: '2026-09-21T16:00:00Z',
+        from: FROM,
         duration: 90,
         price: 1200,
         isWholeField: false,
@@ -103,7 +108,7 @@ describe('tenancy (e2e)', () => {
         .set('Cookie', cookie)
         .send({
           name: 'Weekly training',
-          from: '2026-09-21T16:00:00Z',
+          from: FROM,
           duration: 90,
           price: 1200,
           isWholeField: false,
@@ -122,7 +127,7 @@ describe('tenancy (e2e)', () => {
       expect(await em.count(Slot)).toBe(1);
     });
 
-    const window = { from: '2026-09-21T00:00:00Z', to: '2026-09-22T00:00:00Z' };
+    const window = { from: iso(START.startOf('day')), to: iso(START.endOf('day')) };
 
     for (const cookie of [cookieA, cookieB]) {
       expect((await http().get(`${API}/contacts`).set('Cookie', cookie)).body).toHaveLength(1);
