@@ -33,7 +33,7 @@ export const ApiSearchBookings = () =>
     }),
     ApiOkResponse({ type: [BookingResponseDto] }),
     ApiBadRequestResponse({
-      description: 'from/to missing or not dates, or an unknown query parameter',
+      description: 'from/to missing or not dates, to before from, or an unknown query parameter',
       type: ErrorResponseDto,
     }),
   );

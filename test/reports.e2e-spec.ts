@@ -182,6 +182,10 @@ describe('reports (e2e)', () => {
       await report({ ...WINDOW, includeCancelled: 'true' }),
       'property includeCancelled should not exist',
     );
+    expectValidationError(
+      await report({ from: WINDOW.to, to: WINDOW.from }),
+      'to must not be before from',
+    );
   });
 
   it('hides another tenant rows', async () => {

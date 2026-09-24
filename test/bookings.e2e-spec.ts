@@ -393,6 +393,10 @@ describe('bookings (e2e)', () => {
         await search({ from: FROM, to: FROM, contactId: 'abc' }),
         'contactId must be a UUID',
       );
+      expectValidationError(
+        await search({ from: DAY.to, to: DAY.from }),
+        'to must not be before from',
+      );
     });
   });
 
